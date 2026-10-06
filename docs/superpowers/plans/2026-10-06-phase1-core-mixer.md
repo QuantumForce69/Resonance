@@ -6,7 +6,7 @@
 
 **Architecture:** Tauri 2 app. A dedicated Rust "audio worker" thread owns all COM/WASAPI objects behind an `AudioBackend` trait (WASAPI impl + fake for tests). Pure logic lives in `AppCore` (state building, per-app memory, command application). The worker polls the OS every 250 ms, emits the full `UiState` to the React UI when it changes, emits meter frames at 30 Hz while a window is visible, and persists settings with a 500 ms debounce.
 
-**Tech Stack:** Rust 1.99 (MSVC), Tauri 2, `windows` 0.62, tauri-plugin-global-shortcut 2, tauri-plugin-single-instance 2, React 19 + TypeScript + Vite, Tailwind CSS 4, Zustand 5, Vitest, lucide-react.
+**Tech Stack:** Rust 1.99 (MSVC), Tauri 2, `windows` 0.62, tauri-plugin-global-shortcut 2, tauri-plugin-single-instance 2, React 19 + TypeScript + Vite, Tailwind CSS 4, Zustand 5, Vitest, lucide-react, Geologica (@fontsource-variable/geologica).
 
 ## Global Constraints
 
@@ -19,6 +19,7 @@
 - Per-app routing uses undocumented `IAudioPolicyConfigFactory` (21H2+ IID `ab3d4648-e242-459f-b02f-541c70306324`, class `Windows.Media.Internal.AudioPolicyConfig`); if activation fails, routing UI is hidden and everything else works.
 - Default-device switching uses undocumented `IPolicyConfig` (CLSID `870af99c-171d-4f9e-af0d-e63df40c2bc9`, IID `f8679f50-850a-41cf-9c72-430f290290c8`).
 - UI shows OS-reported state only (except while a slider is being dragged).
+- UI follows the approved **Design v2** mockup (https://claude.ai/artifact/EVtcBLh5RfMA4vaJePa8re): hardware-console look, palette night #111117 / console #18181f / groove #2a2a35 / paper #ecebf3 / fog #9c9bab / violet #8b6cff / lilac #c9b8ff / coral #ff6a5c, typeface Geologica, levels shown in dB (40·log10 curve). No all-caps labels, monospace or card grids.
 - Default mic hotkey `Ctrl+Shift+M`, mode `toggle`.
 - Shell commands below are PowerShell; use `npm.cmd` (script execution policy blocks `npm.ps1`). Cargo commands run from `M:\Resonance\src-tauri`.
 
@@ -47,8 +48,8 @@ M:\Resonance
 │  ├─ lib/meters.ts                     rAF meter engine (no React re-renders)
 │  ├─ lib/hotkey.ts                     KeyboardEvent → hotkey string
 │  ├─ lib/bootstrap.ts, lib/theme.ts    hooks
-│  ├─ components/                       Slider, Meter, MuteButton, AppIcon, DeviceSelect, AppRow, MicStrip, Toasts, HotkeyRecorder
-│  ├─ views/                            Flyout, MainWindow, Titlebar, Sidebar, MixerView, ChannelStrip, DevicesView, MicView, SettingsView
+│  ├─ components/                       Slider (fader), Meter (ladder), DbScale, MuteButton (lit key), MicKey, AppIcon, DeviceSelect, AppRow, Toasts, HotkeyRecorder, BoostKnob, ModeSwitch, ui
+│  ├─ views/                            Flyout, MainWindow, Titlebar (tabs + mic key), MixerView, ChannelStrip, DevicesView, MicView, SettingsView
 │  └─ test/setup.ts, test/fixtures.ts
 └─ src-tauri/
    ├─ Cargo.toml, build.rs, tauri.conf.json, capabilities/default.json, icons/
@@ -4625,20 +4626,62 @@ git commit -m "feat(ui): types, API bindings, store, throttle, meter engine, hot
 
 ---
 
-### Task 11: UI components and visual system
+### Task 11: Visual system (Design v2) and core components
 
-> Before writing styles, invoke the `frontend-design:frontend-design` skill and apply its guidance within this design direction: **"studio hardware on glass"** — dark graphite translucent surfaces over Mica, the Windows accent colour as the only chromatic accent, Segoe UI Variable for text, Cascadia Mono tabular numerals for levels, green→amber→red meters, generous radii, no gratuitous gradients.
+> **Design source of truth:** the approved mockup canvas https://claude.ai/artifact/EVtcBLh5RfMA4vaJePa8re (Mixer, Tray flyout, Microphone). Direction: **studio hardware console**. Navigation lives in the title bar; the mixer is one continuous console surface with real faders (machined caps, engraved dB scales), segmented ladder meters (violet → lilac → coral at clip), illuminated keys (coral = muted, violet glow = mic live), master bus on the right, a rotary boost knob and a three-position mode switch. One typeface: Geologica. No all-caps labels, no monospace, no card grids, no middle-dot meta strings.
+>
+> Tokens: night `#111117`, console `#18181f`, raised `#20202a`, groove `#2a2a35`, paper `#ecebf3`, fog `#9c9bab`, dim `#807f8f`, violet `#8b6cff`, lilac `#c9b8ff`, coral `#ff6a5c`. The brand violet is fixed (the Windows accent colour is no longer applied).
+>
+> Fader scale: positions use the same curve as the readout, `dB = 40·log10(volume)`, so a tick at −10 dB sits at `10^(−10/40) = 56%`. Meter scale: linear in dB from −60 to 0 (`peakToPosition`).
 
 **Files:**
-- Modify: `src/styles.css` (full visual system)
-- Create: `src/components/Slider.tsx`, `Meter.tsx`, `MuteButton.tsx`, `AppIcon.tsx`, `DeviceSelect.tsx`, `AppRow.tsx`, `MicStrip.tsx`, `Toasts.tsx`, `ui.tsx`
-- Test: `src/components/AppRow.test.tsx`, `src/components/DeviceSelect.test.tsx`
+- Modify: `src/styles.css` (full v2 visual system), `src/main.tsx` (font import), `src/lib/levels.ts`, `src/lib/levels.test.ts`
+- Create: `src/components/Slider.tsx`, `Meter.tsx`, `DbScale.tsx`, `MuteButton.tsx`, `MicKey.tsx`, `AppIcon.tsx`, `DeviceSelect.tsx`, `AppRow.tsx`, `Toasts.tsx`, `ui.tsx`
+- Test: `src/components/AppRow.test.tsx`, `src/components/DeviceSelect.test.tsx`, `src/components/MicKey.test.tsx`
 
 **Interfaces:**
 - Consumes: Task 10 modules.
-- Produces components: `Slider({value, onChange, label, orientation?, disabled?, className?})`, `Meter({source, orientation?, className?})`, `MuteButton({muted, onToggle, label, kind?, size?})`, `AppIcon({app, size?})`, `DeviceSelect({app, compact?})`, `AppRow({app})`, `MicStrip({mic})`, `Toasts()`, and from `ui.tsx`: `ViewHeader, Banner, Badge, IconButton, Segmented, Toggle, Field, Logo`.
+- Produces:
+  - `levels.ts` additions: `volumeToDb(v: number): number`, `formatDb(v: number): string` ("−8.3 dB", "0.0 dB", "−∞ dB"), `dbToFaderPosition(db: number): number`.
+  - Components: `Slider({value, onChange, label, orientation?, disabled?, className?})` (renders the fader), `Meter({source, orientation?, className?})` (segmented ladder), `DbScale({kind: "fader"|"meter", orientation?})`, `MuteButton({muted, onToggle, label, kind?, variant?: "key"|"icon", className?})`, `MicKey({mic, hotkey, size?: "compact"|"wide"})`, `AppIcon({app, size?})`, `DeviceSelect({app})`, `AppRow({app})`, `Toasts()`, and from `ui.tsx`: `Logo, ViewHeader, Banner, Badge, IconButton, Segmented, Toggle, Keycaps, Panel`.
 
-- [ ] **Step 1: Write the failing component tests**
+- [ ] **Step 1: Install the typeface**
+
+Run: `npm.cmd install @fontsource-variable/geologica`
+Expected: `added 1 package`. (Bundled locally so the app works offline.)
+
+Add as the first import in `src/main.tsx`:
+```tsx
+import "@fontsource-variable/geologica";
+```
+
+- [ ] **Step 2: Write failing tests for the dB helpers (append to `src/lib/levels.test.ts`)**
+
+```ts
+import { dbToFaderPosition, formatDb, volumeToDb } from "./levels";
+
+describe("fader dB helpers", () => {
+  it("maps volume to dB on a 40·log10 curve", () => {
+    expect(volumeToDb(1)).toBe(0);
+    expect(volumeToDb(0.62)).toBeCloseTo(-8.3, 1);
+    expect(volumeToDb(0)).toBe(-Infinity);
+  });
+
+  it("formats readouts with a real minus sign and one decimal", () => {
+    expect(formatDb(1)).toBe("0.0 dB");
+    expect(formatDb(0.62)).toBe("−8.3 dB");
+    expect(formatDb(0)).toBe("−∞ dB");
+  });
+
+  it("places scale ticks where the fader produces that dB", () => {
+    expect(dbToFaderPosition(0)).toBe(1);
+    expect(dbToFaderPosition(-10)).toBeCloseTo(0.562, 3);
+    expect(volumeToDb(dbToFaderPosition(-20))).toBeCloseTo(-20, 5);
+  });
+});
+```
+
+- [ ] **Step 3: Write failing component tests**
 
 `src/components/AppRow.test.tsx`:
 ```tsx
@@ -4659,10 +4702,15 @@ describe("AppRow", () => {
     useStore.setState({ state: makeState() });
   });
 
-  it("shows the app name and volume", () => {
-    render(<AppRow app={makeApp({ key: "spotify.exe", name: "Spotify", volume: 0.42 })} />);
+  it("shows the app name and its level in dB", () => {
+    render(<AppRow app={makeApp({ key: "spotify.exe", name: "Spotify", volume: 0.62 })} />);
     expect(screen.getByText("Spotify")).toBeInTheDocument();
-    expect(screen.getByText("42")).toBeInTheDocument();
+    expect(screen.getByText("−8.3 dB")).toBeInTheDocument();
+  });
+
+  it("shows Muted instead of a level when muted", () => {
+    render(<AppRow app={makeApp({ key: "spotify.exe", name: "Spotify", muted: true })} />);
+    expect(screen.getByText("Muted")).toBeInTheDocument();
   });
 
   it("toggles mute", () => {
@@ -4671,13 +4719,13 @@ describe("AppRow", () => {
     expect(api.send).toHaveBeenCalledWith({ type: "setAppMute", key: "spotify.exe", muted: true });
   });
 
-  it("sends volume changes from the slider", () => {
+  it("sends volume changes from the fader", () => {
     render(<AppRow app={makeApp({ key: "spotify.exe", name: "Spotify" })} />);
     fireEvent.change(screen.getByRole("slider", { name: "Spotify volume" }), { target: { value: "40" } });
     expect(api.send).toHaveBeenCalledWith({ type: "setAppVolume", key: "spotify.exe", volume: 0.4 });
   });
 
-  it("shows a letter avatar when there is no icon", () => {
+  it("shows a letter tile when the program has no icon", () => {
     render(<AppRow app={makeApp({ key: "zoom.exe", name: "Zoom" })} />);
     expect(screen.getByText("Z")).toBeInTheDocument();
   });
@@ -4703,11 +4751,11 @@ describe("DeviceSelect", () => {
     expect(container).toBeEmptyDOMElement();
   });
 
-  it("lists Default plus active outputs, excluding unplugged ones", () => {
+  it("lists the default plus active outputs, excluding unplugged ones", () => {
     useStore.setState({ state: makeState() });
     render(<DeviceSelect app={makeApp({ key: "a.exe", name: "A" })} />);
     const options = screen.getAllByRole("option").map((o) => o.textContent);
-    expect(options).toEqual(["Default · Headphones", "Headphones", "Speakers"]);
+    expect(options).toEqual(["Default (Headphones)", "Headphones", "Speakers"]);
   });
 
   it("routes to a device and back to default", () => {
@@ -4728,66 +4776,132 @@ describe("DeviceSelect", () => {
 });
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+`src/components/MicKey.test.tsx`:
+```tsx
+import { fireEvent, render, screen } from "@testing-library/react";
+import { MicKey } from "./MicKey";
+import { makeDevice } from "../test/fixtures";
+import * as api from "../lib/api";
 
-Run: `npm.cmd test -- src/components`
-Expected: FAIL — `Failed to resolve import "./AppRow"`.
+vi.mock("../lib/api", () => ({ send: vi.fn().mockResolvedValue(undefined) }));
 
-- [ ] **Step 3: Write `src/styles.css`**
+describe("MicKey", () => {
+  const mic = makeDevice({ id: "mic1", name: "Desk Mic", flow: "capture", defaultConsole: true });
+
+  it("shows live state and mutes on press", () => {
+    render(<MicKey mic={mic} hotkey="Ctrl+Shift+M" />);
+    expect(screen.getByText("Mic live")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Microphone is live. Mute microphone" }));
+    expect(api.send).toHaveBeenCalledWith({ type: "setMicMute", muted: true });
+  });
+
+  it("shows muted state and unmutes on press", () => {
+    render(<MicKey mic={{ ...mic, muted: true }} hotkey={null} />);
+    expect(screen.getByText("Mic muted")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Microphone is muted. Unmute microphone" }));
+    expect(api.send).toHaveBeenLastCalledWith({ type: "setMicMute", muted: false });
+  });
+
+  it("says so when there is no microphone", () => {
+    render(<MicKey mic={undefined} hotkey={null} />);
+    expect(screen.getByText("No microphone")).toBeInTheDocument();
+  });
+
+  it("the wide variant names the mic and the shortcut", () => {
+    render(<MicKey mic={mic} hotkey="Ctrl+Shift+M" size="wide" />);
+    expect(screen.getByText("Desk Mic, press Ctrl Shift M to mute")).toBeInTheDocument();
+  });
+});
+```
+
+- [ ] **Step 4: Run tests to verify they fail**
+
+Run: `npm.cmd test`
+Expected: FAIL — `volumeToDb` not exported; `./AppRow`, `./DeviceSelect`, `./MicKey` unresolved.
+
+- [ ] **Step 5: Add the dB helpers to `src/lib/levels.ts`**
+
+Append:
+```ts
+/** Fader curve shared by readouts and scale ticks: dB = 40·log10(volume). */
+export function volumeToDb(volume: number): number {
+  if (!(volume > 0)) return -Infinity;
+  return 40 * Math.log10(Math.min(1, volume));
+}
+
+export function formatDb(volume: number): string {
+  const db = volumeToDb(volume);
+  if (db === -Infinity) return "−∞ dB";
+  const text = Math.abs(db).toFixed(1);
+  return db < -0.05 ? `−${text} dB` : `${text} dB`;
+}
+
+/** Fader position (0..1) that produces `db`. */
+export function dbToFaderPosition(db: number): number {
+  return Math.min(1, 10 ** (db / 40));
+}
+```
+
+- [ ] **Step 6: Write `src/styles.css` (Design v2)**
 
 ```css
 @import "tailwindcss";
 
 @theme {
-  --font-sans: "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
-  --font-display: "Segoe UI Variable Display", "Segoe UI", system-ui, sans-serif;
-  --font-mono: "Cascadia Mono", Consolas, ui-monospace, monospace;
-  --color-base: var(--base);
-  --color-surface: var(--surface);
-  --color-surface-2: var(--surface-2);
-  --color-line: var(--line);
-  --color-ink: var(--ink);
-  --color-ink-2: var(--ink-2);
-  --color-ink-3: var(--ink-3);
+  --font-sans: "Geologica Variable", "Segoe UI", system-ui, sans-serif;
+  --color-night: var(--night);
+  --color-console: var(--console);
+  --color-raised: var(--raised);
+  --color-groove: var(--groove);
+  --color-paper: var(--paper);
+  --color-fog: var(--fog);
+  --color-dim: var(--dim);
   --color-accent: var(--accent);
-  --color-danger: var(--danger);
+  --color-lilac: var(--lilac);
+  --color-coral: var(--coral);
 }
 
 :root {
-  --accent: #7c5cff;
-  --danger: #ff5468;
-  --meter-low: #39d98a;
-  --meter-mid: #ffc23d;
-  --meter-high: #ff5468;
+  --accent: #8b6cff;
+  --lilac: #c9b8ff;
+  --coral: #ff6a5c;
 }
 
 :root,
 :root[data-theme="dark"] {
   color-scheme: dark;
-  --base: rgb(14 15 19 / 0.78);
-  --surface: rgb(255 255 255 / 0.04);
-  --surface-2: rgb(255 255 255 / 0.08);
-  --line: rgb(255 255 255 / 0.07);
-  --ink: #f3f4f7;
-  --ink-2: #a8adb8;
-  --ink-3: #6b707c;
-  --track: rgb(255 255 255 / 0.1);
-  --thumb: #ffffff;
-  --option-bg: #1b1c22;
+  --night: #111117;
+  --console: #18181f;
+  --raised: #20202a;
+  --groove: #2a2a35;
+  --paper: #ecebf3;
+  --fog: #9c9bab;
+  --dim: #807f8f;
+  --slot: #07070a;
+  --cap-hi: #3d3d49;
+  --cap-lo: #1e1e26;
+  --cap-edge: #52525f;
+  --ladder-off: #25252f;
+  --option-bg: #1a1a22;
+  --shadow: rgb(0 0 0 / 0.55);
 }
 
 :root[data-theme="light"] {
   color-scheme: light;
-  --base: rgb(247 248 251 / 0.84);
-  --surface: rgb(0 0 0 / 0.03);
-  --surface-2: rgb(0 0 0 / 0.06);
-  --line: rgb(0 0 0 / 0.08);
-  --ink: #14161b;
-  --ink-2: #555b67;
-  --ink-3: #8c919c;
-  --track: rgb(0 0 0 / 0.1);
-  --thumb: #ffffff;
+  --night: #f3f2f7;
+  --console: #fbfaff;
+  --raised: #ecebf3;
+  --groove: #d9d8e3;
+  --paper: #16151c;
+  --fog: #5d5c6b;
+  --dim: #6e6d7c;
+  --slot: #d4d3de;
+  --cap-hi: #ffffff;
+  --cap-lo: #e4e3ec;
+  --cap-edge: #b9b8c6;
+  --ladder-off: #e1e0ea;
   --option-bg: #ffffff;
+  --shadow: rgb(40 36 70 / 0.18);
 }
 
 html,
@@ -4798,8 +4912,8 @@ body,
 
 body {
   margin: 0;
-  background: var(--base);
-  color: var(--ink);
+  background: var(--night);
+  color: var(--paper);
   font-family: var(--font-sans);
   font-size: 14px;
   -webkit-font-smoothing: antialiased;
@@ -4820,87 +4934,265 @@ input {
   border-radius: 6px;
 }
 
-.tabular {
-  font-family: var(--font-mono);
+.num {
   font-variant-numeric: tabular-nums;
 }
 
-/* ---------- Range slider ---------- */
-.rs-slider {
+/* ---------- Console surface ---------- */
+.console {
+  border: 1px solid var(--groove);
+  border-radius: 14px;
+  background: linear-gradient(color-mix(in srgb, var(--console) 92%, white 8%), var(--console));
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.04), 0 30px 60px var(--shadow);
+}
+
+/* ---------- Faders ---------- */
+.fader {
   -webkit-appearance: none;
   appearance: none;
-  background: transparent;
   width: 100%;
-  height: 20px;
+  height: 24px;
   margin: 0;
-  cursor: pointer;
-  --fill: 50%;
+  background: transparent;
+  cursor: grab;
 }
-.rs-slider::-webkit-slider-runnable-track {
-  height: 4px;
-  border-radius: 999px;
-  background: linear-gradient(to right, var(--accent) var(--fill), var(--track) var(--fill));
+.fader:active {
+  cursor: grabbing;
 }
-.rs-slider::-webkit-slider-thumb {
+.fader::-webkit-slider-runnable-track {
+  height: 6px;
+  border-radius: 3px;
+  background: var(--slot);
+  box-shadow: inset 0 0 0 1px var(--groove), inset 0 2px 4px rgb(0 0 0 / 0.6);
+}
+.fader::-webkit-slider-thumb {
   -webkit-appearance: none;
   width: 14px;
-  height: 14px;
-  margin-top: -5px;
-  border-radius: 50%;
-  background: var(--thumb);
-  box-shadow: 0 0 0 3px var(--accent), 0 2px 6px rgb(0 0 0 / 0.35);
-  transition: transform 0.12s ease;
+  height: 22px;
+  margin-top: -8px;
+  border-radius: 3px;
+  border: 1px solid var(--cap-edge);
+  background: linear-gradient(
+    to right,
+    var(--cap-hi) 0%,
+    var(--cap-lo) 40%,
+    var(--paper) 40%,
+    var(--paper) 60%,
+    var(--cap-lo) 60%,
+    var(--cap-lo) 100%
+  );
+  box-shadow: 0 4px 10px var(--shadow), inset 0 1px 0 rgb(255 255 255 / 0.12);
 }
-.rs-slider:hover::-webkit-slider-thumb,
-.rs-slider:active::-webkit-slider-thumb {
-  transform: scale(1.15);
-}
-.rs-slider:disabled {
-  cursor: default;
-  opacity: 0.4;
-}
-.rs-slider.vertical {
+.fader.vertical {
   writing-mode: vertical-lr;
   direction: rtl;
-  width: 20px;
+  width: 34px;
   height: 100%;
 }
-.rs-slider.vertical::-webkit-slider-runnable-track {
-  width: 4px;
+.fader.vertical::-webkit-slider-runnable-track {
+  width: 6px;
   height: 100%;
-  background: linear-gradient(to top, var(--accent) var(--fill), var(--track) var(--fill));
 }
-.rs-slider.vertical::-webkit-slider-thumb {
+.fader.vertical::-webkit-slider-thumb {
+  width: 34px;
+  height: 18px;
   margin-top: 0;
-  margin-left: -5px;
+  margin-left: -14px;
+  background: linear-gradient(
+    to bottom,
+    var(--cap-hi) 0%,
+    var(--cap-lo) 44%,
+    var(--paper) 44%,
+    var(--paper) 56%,
+    var(--cap-lo) 56%,
+    var(--cap-lo) 100%
+  );
+}
+.fader:focus-visible {
+  outline: none;
+}
+.fader:focus-visible::-webkit-slider-thumb {
+  box-shadow: 0 0 0 2px var(--accent), 0 4px 10px var(--shadow);
+}
+.fader:disabled {
+  opacity: 0.4;
+  cursor: default;
 }
 
-/* ---------- Meters ---------- */
-.meter-fill {
-  background: linear-gradient(to right, var(--meter-low) 0%, var(--meter-low) 65%, var(--meter-mid) 85%, var(--meter-high) 100%);
+/* ---------- Ladder meters ---------- */
+.ladder {
+  position: relative;
+  overflow: hidden;
+  -webkit-mask-image: repeating-linear-gradient(to right, #000 0 3px, transparent 3px 5px);
+  mask-image: repeating-linear-gradient(to right, #000 0 3px, transparent 3px 5px);
 }
-.meter.vertical .meter-fill {
-  background: linear-gradient(to top, var(--meter-low) 0%, var(--meter-low) 65%, var(--meter-mid) 85%, var(--meter-high) 100%);
+.ladder.vertical {
+  -webkit-mask-image: repeating-linear-gradient(to top, #000 0 3px, transparent 3px 5px);
+  mask-image: repeating-linear-gradient(to top, #000 0 3px, transparent 3px 5px);
+}
+.ladder-off {
+  position: absolute;
+  inset: 0;
+  background: var(--ladder-off);
+}
+.ladder-fill {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(to right, #5b3df5 0%, var(--accent) 55%, var(--lilac) 84%, var(--coral) 95%);
+}
+.ladder.vertical .ladder-fill {
+  background: linear-gradient(to top, #5b3df5 0%, var(--accent) 55%, var(--lilac) 84%, var(--coral) 95%);
+}
+.ladder-peak {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 3px;
+  background: var(--lilac);
+  opacity: 0;
+}
+.ladder.vertical .ladder-peak {
+  top: auto;
+  left: 0;
+  right: 0;
+  width: auto;
+  height: 3px;
 }
 
-/* ---------- Select ---------- */
-.rs-select {
+/* ---------- Illuminated keys ---------- */
+.key {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 12px;
+  border-radius: 6px;
+  border: 1px solid var(--groove);
+  background: linear-gradient(var(--raised), var(--console));
+  color: var(--fog);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  box-shadow: 0 2px 0 var(--slot), inset 0 1px 0 rgb(255 255 255 / 0.06);
+  transition: background-color 0.12s, color 0.12s, box-shadow 0.12s;
+}
+.key:hover {
+  color: var(--paper);
+}
+.key-lit {
+  border-color: var(--coral);
+  background: linear-gradient(#ff7a6d, #e8564a);
+  color: #1a0d0b;
+  box-shadow: 0 0 16px rgb(255 106 92 / 0.45), 0 2px 0 #7a2a23, inset 0 1px 0 rgb(255 255 255 / 0.35);
+}
+.key-lit:hover {
+  color: #1a0d0b;
+}
+
+.mic-live {
+  border-color: color-mix(in srgb, var(--accent) 40%, var(--groove));
+  background: color-mix(in srgb, var(--accent) 13%, var(--console));
+  box-shadow: 0 0 22px rgb(139 108 255 / 0.16), inset 0 1px 0 rgb(255 255 255 / 0.06);
+}
+.mic-muted {
+  border-color: var(--coral);
+  background: color-mix(in srgb, var(--coral) 16%, var(--console));
+  box-shadow: 0 0 22px rgb(255 106 92 / 0.2);
+}
+.led-live {
+  background: #a68dff;
+  box-shadow: 0 0 8px var(--accent), 0 0 2px #fff;
+}
+.led-muted {
+  background: var(--coral);
+  box-shadow: 0 0 8px var(--coral);
+}
+
+/* ---------- Title bar tabs ---------- */
+.tab {
+  position: relative;
+  padding: 6px 2px;
+  border: 0;
+  background: transparent;
+  color: var(--fog);
+  font-size: 13px;
+  cursor: pointer;
+}
+.tab:hover,
+.tab[aria-current="page"] {
+  color: var(--paper);
+}
+.tab[aria-current="page"]::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -14px;
+  height: 2px;
+  border-radius: 2px;
+  background: var(--accent);
+}
+
+/* ---------- Selects ---------- */
+.patch {
   -webkit-appearance: none;
   appearance: none;
-  max-width: 100%;
-  padding: 5px 26px 5px 10px;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  background: var(--surface-2)
-    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%23999' stroke-width='1.5'/%3E%3C/svg%3E")
-    no-repeat right 9px center / 10px;
-  font-size: 12px;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 6px 8px;
+  border: 1px solid var(--groove);
+  border-radius: 6px;
+  background: var(--night);
+  color: var(--fog);
+  font-size: 11px;
   text-overflow: ellipsis;
   cursor: pointer;
 }
-.rs-select option {
+.field-select {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 280px;
+  max-width: 100%;
+  padding: 9px 12px;
+  border: 1px solid var(--groove);
+  border-radius: 8px;
+  background: var(--night);
+  color: var(--paper);
+  font-size: 13px;
+  cursor: pointer;
+}
+.patch option,
+.field-select option {
   background: var(--option-bg);
-  color: var(--ink);
+  color: var(--paper);
+}
+
+/* ---------- Keycaps ---------- */
+.cap {
+  display: inline-grid;
+  place-items: center;
+  min-width: 34px;
+  height: 32px;
+  padding: 0 10px;
+  box-sizing: border-box;
+  border-radius: 7px;
+  border: 1px solid var(--cap-edge);
+  border-bottom-width: 3px;
+  background: linear-gradient(var(--raised), var(--console));
+  color: var(--paper);
+  font-size: 13px;
+  font-weight: 500;
+}
+.cap.small {
+  min-width: 0;
+  height: 20px;
+  padding: 0 5px;
+  border-bottom-width: 1px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--fog);
 }
 
 /* ---------- Scrollbars ---------- */
@@ -4909,19 +5201,26 @@ input {
   height: 8px;
 }
 ::-webkit-scrollbar-thumb {
-  background: var(--surface-2);
+  background: var(--groove);
   border-radius: 8px;
 }
 ::-webkit-scrollbar-track {
   background: transparent;
 }
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    transition: none !important;
+  }
+}
 ```
 
-- [ ] **Step 4: Write the components**
+- [ ] **Step 7: Write the components**
 
 `src/components/Slider.tsx`:
 ```tsx
-import { useMemo, useRef, useState, type CSSProperties } from "react";
+import { useMemo, useRef, useState } from "react";
+import { formatDb } from "../lib/levels";
 import { throttle } from "../lib/throttle";
 
 interface Props {
@@ -4933,13 +5232,13 @@ interface Props {
   className?: string;
 }
 
-/** 0..1 slider. While dragging it shows the local value so backend echoes can't make it jump. */
+/** Hardware-style fader (0..1). Holds its local value while dragging so backend echoes can't make it jump. */
 export function Slider({ value, onChange, label, orientation = "horizontal", disabled, className = "" }: Props) {
   const [local, setLocal] = useState<number | null>(null);
   const onChangeRef = useRef(onChange);
   onChangeRef.current = onChange;
   const emit = useMemo(() => throttle((v: number) => onChangeRef.current(v), 16), []);
-  const pct = Math.round((local ?? value) * 100);
+  const shown = local ?? value;
 
   const release = () => {
     if (local !== null) onChangeRef.current(local);
@@ -4952,12 +5251,11 @@ export function Slider({ value, onChange, label, orientation = "horizontal", dis
       min={0}
       max={100}
       step={1}
-      value={pct}
+      value={Math.round(shown * 100)}
       aria-label={label}
-      aria-valuetext={`${pct}%`}
+      aria-valuetext={formatDb(shown)}
       disabled={disabled}
-      className={`rs-slider ${orientation === "vertical" ? "vertical" : ""} ${className}`}
-      style={{ "--fill": `${pct}%` } as CSSProperties}
+      className={`fader ${orientation === "vertical" ? "vertical" : ""} ${className}`}
       onChange={(e) => {
         const v = Number(e.currentTarget.value) / 100;
         setLocal(v);
@@ -4983,6 +5281,7 @@ interface Props {
   className?: string;
 }
 
+/** Segmented ladder meter driven by the rAF meter engine (no React renders). */
 export function Meter({ source, orientation = "horizontal", className = "" }: Props) {
   const fill = useRef<HTMLDivElement>(null);
   const peak = useRef<HTMLDivElement>(null);
@@ -4994,19 +5293,43 @@ export function Meter({ source, orientation = "horizontal", className = "" }: Pr
   }, [source, vertical]);
 
   return (
-    <div
-      aria-hidden
-      className={`meter relative overflow-hidden rounded-full bg-[var(--track)] ${vertical ? "vertical h-full w-1.5" : "h-1 w-full"} ${className}`}
-    >
-      <div
-        ref={fill}
-        className="meter-fill absolute inset-0"
-        style={{ clipPath: vertical ? "inset(100% 0 0 0)" : "inset(0 100% 0 0)" }}
-      />
-      <div
-        ref={peak}
-        className={`absolute bg-[var(--ink)] opacity-0 ${vertical ? "inset-x-0 h-px" : "inset-y-0 w-px"}`}
-      />
+    <div aria-hidden className={`ladder ${vertical ? "vertical h-full w-[6px]" : "h-1 w-full"} ${className}`}>
+      <div className="ladder-off" />
+      <div ref={fill} className="ladder-fill" style={{ clipPath: vertical ? "inset(100% 0 0 0)" : "inset(0 100% 0 0)" }} />
+      <div ref={peak} className="ladder-peak" />
+    </div>
+  );
+}
+```
+
+`src/components/DbScale.tsx`:
+```tsx
+import type { CSSProperties } from "react";
+import { dbToFaderPosition, MIN_DB } from "../lib/levels";
+
+const FADER_TICKS = [0, -10, -20, -30, -40];
+const METER_TICKS = [-60, -40, -20, -10, 0];
+
+const label = (db: number) => (db === 0 ? "0" : `−${-db}`);
+
+/** Engraved scale next to a fader ("fader": 40·log10 curve) or under a meter ("meter": linear dB). */
+export function DbScale({ kind, orientation = "vertical" }: { kind: "fader" | "meter"; orientation?: "horizontal" | "vertical" }) {
+  const vertical = orientation === "vertical";
+  const ticks = kind === "fader" ? FADER_TICKS : METER_TICKS;
+  const pos = (db: number) => (kind === "fader" ? dbToFaderPosition(db) : (db - MIN_DB) / -MIN_DB) * 100;
+  const place = (p: number): CSSProperties =>
+    vertical
+      ? { position: "absolute", right: 0, bottom: `${p}%`, transform: "translateY(50%)" }
+      : { position: "absolute", left: `${p}%`, transform: p >= 100 ? "translateX(-100%)" : p <= 0 ? "none" : "translateX(-50%)" };
+
+  return (
+    <div aria-hidden className={`num relative text-[10px] text-dim ${vertical ? "h-full w-6" : "h-3.5 w-full"}`}>
+      {ticks.map((db) => (
+        <span key={db} style={place(pos(db))}>
+          {label(db)}
+        </span>
+      ))}
+      {kind === "fader" && <span style={place(0)}>−∞</span>}
     </div>
   );
 }
@@ -5014,19 +5337,20 @@ export function Meter({ source, orientation = "horizontal", className = "" }: Pr
 
 `src/components/MuteButton.tsx`:
 ```tsx
-import { Mic, MicOff, Volume2, VolumeX } from "lucide-react";
+import { Mic, MicOff, VolumeX } from "lucide-react";
 
 interface Props {
   muted: boolean;
   onToggle: () => void;
   label: string;
   kind?: "speaker" | "mic";
-  size?: "md" | "lg";
+  /** "key": a labelled console key; "icon": a compact square key */
+  variant?: "key" | "icon";
+  className?: string;
 }
 
-export function MuteButton({ muted, onToggle, label, kind = "speaker", size = "md" }: Props) {
-  const Icon = kind === "mic" ? (muted ? MicOff : Mic) : muted ? VolumeX : Volume2;
-  const dims = size === "lg" ? "h-11 w-11" : "h-8 w-8";
+export function MuteButton({ muted, onToggle, label, kind = "speaker", variant = "icon", className = "" }: Props) {
+  const Icon = kind === "mic" ? (muted ? MicOff : Mic) : VolumeX;
   return (
     <button
       type="button"
@@ -5034,11 +5358,47 @@ export function MuteButton({ muted, onToggle, label, kind = "speaker", size = "m
       aria-label={`${muted ? "Unmute" : "Mute"} ${label}`}
       title={muted ? "Unmute" : "Mute"}
       onClick={onToggle}
-      className={`grid shrink-0 place-items-center rounded-lg transition-colors ${dims} ${
-        muted ? "bg-danger/15 text-danger hover:bg-danger/25" : "text-ink-2 hover:bg-surface-2 hover:text-ink"
-      }`}
+      className={`key ${muted ? "key-lit" : ""} ${variant === "icon" ? "w-[30px] shrink-0 px-0!" : ""} ${className}`}
     >
-      <Icon size={size === "lg" ? 20 : 16} strokeWidth={2} />
+      {variant === "key" ? (muted ? "Muted" : "Mute") : <Icon size={14} strokeWidth={2} />}
+    </button>
+  );
+}
+```
+
+`src/components/MicKey.tsx`:
+```tsx
+import { run } from "../lib/store";
+import type { Device } from "../lib/types";
+import { Meter } from "./Meter";
+import { Keycaps } from "./ui";
+
+/** The always-visible mic key: violet glow when live, lit coral when muted. */
+export function MicKey({ mic, hotkey, size = "compact" }: { mic: Device | undefined; hotkey: string | null; size?: "compact" | "wide" }) {
+  if (!mic) return <div className="px-2 text-[12px] text-dim">No microphone</div>;
+  const live = !mic.muted;
+  const shortcut = hotkey ? hotkey.split("+").join(" ") : null;
+  return (
+    <button
+      type="button"
+      aria-pressed={mic.muted}
+      aria-label={live ? "Microphone is live. Mute microphone" : "Microphone is muted. Unmute microphone"}
+      onClick={() => run({ type: "setMicMute", muted: live })}
+      className={`flex items-center gap-2.5 rounded-lg border text-[12px] transition-colors ${
+        size === "wide" ? "w-full px-3 py-2.5 text-left" : "h-8 px-3"
+      } ${live ? "mic-live" : "mic-muted"}`}
+    >
+      <span className={`h-2 w-2 shrink-0 rounded-full ${live ? "led-live" : "led-muted"}`} />
+      <span className="flex min-w-0 flex-1 flex-col items-start gap-px">
+        <span className="text-[13px] font-medium text-paper">{live ? "Mic live" : "Mic muted"}</span>
+        {size === "wide" && (
+          <span className="w-full truncate text-[11px] text-fog">
+            {shortcut ? `${mic.name}, press ${shortcut} to ${live ? "mute" : "unmute"}` : mic.name}
+          </span>
+        )}
+      </span>
+      {size === "compact" && hotkey && <Keycaps combo={hotkey} small />}
+      {size === "wide" && <Meter source="mic" className="w-16!" />}
     </button>
   );
 }
@@ -5062,6 +5422,7 @@ function loadIcon(path: string): Promise<string | null> {
   return p;
 }
 
+/** The program's real icon (extracted from its .exe); a letter tile if it has none. Dimmed when muted. */
 export function AppIcon({ app, size = 32 }: { app: App; size?: number }) {
   const [src, setSrc] = useState<string | null>(null);
 
@@ -5075,20 +5436,17 @@ export function AppIcon({ app, size = 32 }: { app: App; size?: number }) {
     };
   }, [app.exePath, app.isSystem]);
 
-  const box = { width: size, height: size };
+  const box = { width: size, height: size, opacity: app.muted ? 0.45 : 1 };
   if (app.isSystem) {
     return (
-      <div style={box} className="grid shrink-0 place-items-center rounded-lg bg-surface-2 text-ink-2">
+      <div style={box} className="grid shrink-0 place-items-center rounded-[9px] bg-raised text-fog">
         <Bell size={size * 0.5} />
       </div>
     );
   }
-  if (src) return <img src={src} style={box} alt="" draggable={false} className="shrink-0 rounded-md" />;
+  if (src) return <img src={src} style={box} alt="" draggable={false} className="shrink-0 object-contain" />;
   return (
-    <div
-      style={{ ...box, fontSize: size * 0.45 }}
-      className="grid shrink-0 place-items-center rounded-lg bg-accent/20 font-semibold text-accent"
-    >
+    <div style={{ ...box, fontSize: size * 0.45 }} className="grid shrink-0 place-items-center rounded-[9px] bg-raised font-semibold text-paper">
       {app.name.charAt(0).toUpperCase()}
     </div>
   );
@@ -5100,7 +5458,8 @@ export function AppIcon({ app, size = 32 }: { app: App; size?: number }) {
 import { outputs, run, useStore } from "../lib/store";
 import type { App } from "../lib/types";
 
-export function DeviceSelect({ app, compact = false }: { app: App; compact?: boolean }) {
+/** Per-app output patch. Hidden when Windows doesn't support per-app routing. */
+export function DeviceSelect({ app }: { app: App }) {
   const state = useStore((s) => s.state);
   if (!state?.routingAvailable) return null;
   const list = outputs(state);
@@ -5114,9 +5473,9 @@ export function DeviceSelect({ app, compact = false }: { app: App; compact?: boo
       title="Output device"
       value={app.output ?? ""}
       onChange={(e) => run({ type: "setAppOutput", key: app.key, deviceId: e.currentTarget.value || null })}
-      className={`rs-select ${compact ? "w-full" : "w-44"}`}
+      className="patch"
     >
-      <option value="">{def ? `Default · ${def.name}` : "Default"}</option>
+      <option value="">{def ? `Default (${def.name})` : "Default output"}</option>
       {list.map((d) => (
         <option key={d.id} value={d.id}>
           {d.name}
@@ -5128,8 +5487,9 @@ export function DeviceSelect({ app, compact = false }: { app: App; compact?: boo
 }
 ```
 
-`src/components/AppRow.tsx`:
+`src/components/AppRow.tsx` (flyout row):
 ```tsx
+import { formatDb } from "../lib/levels";
 import { run } from "../lib/store";
 import type { App } from "../lib/types";
 import { AppIcon } from "./AppIcon";
@@ -5139,51 +5499,18 @@ import { Slider } from "./Slider";
 
 export function AppRow({ app }: { app: App }) {
   return (
-    <div className="group flex items-center gap-3 rounded-xl px-2.5 py-2 transition-colors hover:bg-surface">
-      <AppIcon app={app} size={28} />
+    <div className="flex items-center gap-3 px-4 py-2">
+      <AppIcon app={app} size={30} />
       <div className="min-w-0 flex-1">
         <div className="flex items-baseline justify-between gap-2">
-          <span className={`truncate text-[13px] ${app.muted ? "text-ink-3" : ""}`}>{app.name}</span>
-          <span className="tabular text-[11px] text-ink-3">{Math.round(app.volume * 100)}</span>
+          <span className={`truncate text-[13px] ${app.muted ? "text-dim" : "text-paper"}`}>{app.name}</span>
+          <span className={`num text-[11px] ${app.muted ? "text-coral" : "text-dim"}`}>{app.muted ? "Muted" : formatDb(app.volume)}</span>
         </div>
-        <Slider
-          value={app.volume}
-          label={`${app.name} volume`}
-          onChange={(v) => run({ type: "setAppVolume", key: app.key, volume: v })}
-        />
-        <Meter source={`app:${app.key}`} />
+        <Slider value={app.volume} label={`${app.name} volume`} onChange={(v) => run({ type: "setAppVolume", key: app.key, volume: v })} />
+        <Meter source={`app:${app.key}`} className="h-[3px]!" />
       </div>
       <MuteButton muted={app.muted} label={app.name} onToggle={() => run({ type: "setAppMute", key: app.key, muted: !app.muted })} />
     </div>
-  );
-}
-```
-
-`src/components/MicStrip.tsx`:
-```tsx
-import { run } from "../lib/store";
-import type { Device } from "../lib/types";
-import { Meter } from "./Meter";
-import { MuteButton } from "./MuteButton";
-import { Slider } from "./Slider";
-
-/** Compact mic control used in the flyout. */
-export function MicStrip({ mic }: { mic: Device }) {
-  return (
-    <section className={`rounded-2xl border p-3 ${mic.muted ? "border-danger/40 bg-danger/10" : "border-line bg-surface"}`}>
-      <div className="mb-1.5 flex items-center justify-between text-[11px] uppercase tracking-wider text-ink-3">
-        <span>Microphone</span>
-        <span className="tabular normal-case">{mic.muted ? "Muted" : `${Math.round(mic.volume * 100)}%`}</span>
-      </div>
-      <div className="flex items-center gap-2">
-        <MuteButton kind="mic" muted={mic.muted} label="microphone" onToggle={() => run({ type: "setMicMute", muted: !mic.muted })} />
-        <div className="min-w-0 flex-1">
-          <div className="truncate text-[13px]">{mic.name}</div>
-          <Slider value={mic.volume} label="Microphone level" onChange={(v) => run({ type: "setDeviceVolume", id: mic.id, volume: v })} />
-          <Meter source="mic" />
-        </div>
-      </div>
-    </section>
   );
 }
 ```
@@ -5204,11 +5531,11 @@ function ToastItem({ toast }: { toast: Toast }) {
   return (
     <div
       role={toast.kind === "error" ? "alert" : "status"}
-      className="pointer-events-auto flex items-start gap-3 rounded-xl border border-line bg-[var(--option-bg)] px-4 py-3 text-[13px] shadow-2xl"
+      className="pointer-events-auto flex items-start gap-3 rounded-[10px] border border-groove bg-raised px-4 py-3 text-[13px] shadow-[0_20px_40px_var(--shadow)]"
     >
-      <Icon size={16} className={toast.kind === "error" ? "mt-0.5 text-danger" : "mt-0.5 text-accent"} />
+      <Icon size={16} className={toast.kind === "error" ? "mt-0.5 text-coral" : "mt-0.5 text-accent"} />
       <span className="flex-1">{toast.message}</span>
-      <button type="button" aria-label="Dismiss" onClick={() => dismiss(toast.id)} className="text-ink-3 hover:text-ink">
+      <button type="button" aria-label="Dismiss" onClick={() => dismiss(toast.id)} className="text-dim hover:text-paper">
         <X size={14} />
       </button>
     </div>
@@ -5233,39 +5560,41 @@ export function Toasts() {
 ```tsx
 import type { ReactNode } from "react";
 
-export function Logo({ size = 18 }: { size?: number }) {
+export function Logo({ size = 20 }: { size?: number }) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" aria-hidden>
-      <circle cx="12" cy="12" r="2.6" fill="var(--accent)" />
+      <circle cx="12" cy="12" r="2.4" fill="var(--accent)" />
       <circle cx="12" cy="12" r="6" fill="none" stroke="var(--accent)" strokeWidth="1.6" />
-      <circle cx="12" cy="12" r="9.6" fill="none" stroke="currentColor" strokeOpacity="0.55" strokeWidth="1.4" />
+      <path d="M12 2.4a9.6 9.6 0 0 1 9.6 9.6" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+      <path d="M12 21.6A9.6 9.6 0 0 1 2.4 12" fill="none" stroke="currentColor" strokeOpacity="0.45" strokeWidth="1.6" strokeLinecap="round" />
     </svg>
   );
 }
 
-export function ViewHeader({ title, subtitle, children }: { title: string; subtitle?: string; children?: ReactNode }) {
+export function ViewHeader({ title, subtitle }: { title: string; subtitle?: string }) {
   return (
-    <div className="flex items-end justify-between gap-4">
-      <div>
-        <h1 className="font-display text-2xl font-semibold tracking-tight">{title}</h1>
-        {subtitle && <p className="mt-0.5 text-[13px] text-ink-2">{subtitle}</p>}
-      </div>
-      {children}
+    <div className="flex flex-wrap items-baseline gap-x-5 gap-y-1">
+      <h1 className="m-0 text-[30px] font-medium tracking-[-0.025em]">{title}</h1>
+      {subtitle && <p className="m-0 text-[14px] text-fog">{subtitle}</p>}
     </div>
   );
 }
 
+export function Panel({ children, className = "" }: { children: ReactNode; className?: string }) {
+  return <div className={`rounded-[14px] border border-groove bg-console ${className}`}>{children}</div>;
+}
+
 export function Banner({ children }: { children: ReactNode }) {
-  return <div className="rounded-xl border border-line bg-surface-2 px-4 py-3 text-[13px] text-ink-2">{children}</div>;
+  return <div className="rounded-[10px] border border-groove bg-raised px-4 py-3 text-[13px] text-fog">{children}</div>;
 }
 
 export function Badge({ children, tone = "neutral" }: { children: ReactNode; tone?: "neutral" | "accent" | "muted" }) {
   const tones = {
-    neutral: "bg-surface-2 text-ink-2",
-    accent: "bg-accent/20 text-accent",
-    muted: "bg-surface text-ink-3",
+    neutral: "border-groove text-fog",
+    accent: "border-accent/50 text-lilac",
+    muted: "border-groove text-dim",
   };
-  return <span className={`rounded-md px-1.5 py-0.5 text-[11px] font-medium ${tones[tone]}`}>{children}</span>;
+  return <span className={`rounded-[5px] border px-1.5 py-px text-[11px] ${tones[tone]}`}>{children}</span>;
 }
 
 export function IconButton({ label, onClick, children }: { label: string; onClick: () => void; children: ReactNode }) {
@@ -5275,10 +5604,22 @@ export function IconButton({ label, onClick, children }: { label: string; onClic
       aria-label={label}
       title={label}
       onClick={onClick}
-      className="grid h-8 w-8 place-items-center rounded-lg text-ink-2 transition-colors hover:bg-surface-2 hover:text-ink"
+      className="grid h-8 w-8 place-items-center rounded-lg text-fog transition-colors hover:bg-raised hover:text-paper"
     >
       {children}
     </button>
+  );
+}
+
+export function Keycaps({ combo, small = false }: { combo: string; small?: boolean }) {
+  return (
+    <span className="flex items-center gap-1">
+      {combo.split("+").map((k) => (
+        <kbd key={k} className={`cap ${small ? "small" : ""}`}>
+          {k}
+        </kbd>
+      ))}
+    </span>
   );
 }
 
@@ -5294,7 +5635,7 @@ export function Segmented<T extends string | number>({
   label: string;
 }) {
   return (
-    <div role="radiogroup" aria-label={label} className="inline-flex rounded-lg border border-line bg-surface p-0.5">
+    <div role="radiogroup" aria-label={label} className="inline-flex rounded-[9px] border border-groove bg-night p-0.5">
       {options.map((o) => (
         <button
           key={String(o.value)}
@@ -5302,8 +5643,8 @@ export function Segmented<T extends string | number>({
           role="radio"
           aria-checked={o.value === value}
           onClick={() => onChange(o.value)}
-          className={`rounded-md px-3 py-1 text-[13px] transition-colors ${
-            o.value === value ? "bg-accent text-white shadow" : "text-ink-2 hover:text-ink"
+          className={`rounded-[7px] px-3 py-1 text-[13px] transition-colors ${
+            o.value === value ? "bg-accent text-white" : "text-fog hover:text-paper"
           }`}
         >
           {o.label}
@@ -5321,38 +5662,38 @@ export function Toggle({ checked, onChange, label }: { checked: boolean; onChang
       aria-checked={checked}
       aria-label={label}
       onClick={() => onChange(!checked)}
-      className={`relative h-6 w-11 rounded-full transition-colors ${checked ? "bg-accent" : "bg-surface-2"}`}
+      className={`relative h-6 w-11 rounded-full border transition-colors ${checked ? "border-accent bg-accent" : "border-groove bg-night"}`}
     >
       <span
-        className={`absolute top-1 h-4 w-4 rounded-full bg-white shadow transition-transform ${checked ? "translate-x-6" : "translate-x-1"}`}
+        className={`absolute top-[3px] h-4 w-4 rounded-full bg-white shadow transition-transform ${checked ? "translate-x-[22px]" : "translate-x-[3px]"}`}
       />
     </button>
   );
 }
 
-export function Field({ label, hint, children }: { label: string; hint?: string; children: ReactNode }) {
+export function Field({ label, hint, htmlFor, children }: { label: string; hint?: string; htmlFor?: string; children: ReactNode }) {
   return (
-    <div className="flex items-center justify-between gap-6 border-b border-line py-4 last:border-b-0">
-      <div>
-        <div className="text-[14px] font-medium">{label}</div>
-        {hint && <div className="mt-0.5 text-[12px] text-ink-3">{hint}</div>}
-      </div>
-      <div className="shrink-0">{children}</div>
+    <div className="border-b border-groove py-5 last:border-b-0">
+      <label htmlFor={htmlFor} className="block font-medium">
+        {label}
+      </label>
+      {hint && <p className="mt-0.5 mb-3 text-[12px] text-fog">{hint}</p>}
+      {children}
     </div>
   );
 }
 ```
 
-- [ ] **Step 5: Run tests to verify they pass**
+- [ ] **Step 8: Run tests to verify they pass**
 
 Run: `npm.cmd test`
-Expected: PASS (all previous + 8 component tests).
+Expected: PASS (Task 10 tests, the dB helpers, AppRow, DeviceSelect, MicKey).
 
-- [ ] **Step 6: Commit**
+- [ ] **Step 9: Commit**
 
 ```powershell
 git add -A
-git commit -m "feat(ui): visual system and core components"
+git commit -m "feat(ui): Design v2 console visual system and core components"
 ```
 
 ---
@@ -5366,7 +5707,7 @@ git commit -m "feat(ui): visual system and core components"
 
 **Interfaces:**
 - Consumes: Tasks 10–11.
-- Produces: `useBootstrap()`, `useTheme(state)`, `<Flyout />`; `App` routes `?view=flyout` to the flyout, everything else to `MainWindow` (Task 13 — until then App imports a temporary placeholder; Step 5 shows it).
+- Produces: `useBootstrap()`, `useTheme(state)`, `<Flyout />`; `App` routes `?view=flyout` to the flyout and everything else to `MainWindow` (Task 13; a placeholder until then).
 
 - [ ] **Step 1: Write the failing Flyout test**
 
@@ -5392,16 +5733,17 @@ describe("Flyout", () => {
     expect(screen.getByText(/connecting/i)).toBeInTheDocument();
   });
 
-  it("shows master device, mic and apps", () => {
+  it("shows the master output, the mic key and every app", () => {
     useStore.setState({ state: makeState() });
     render(<Flyout />);
     expect(screen.getByText("Headphones")).toBeInTheDocument();
-    expect(screen.getByText("Desk Mic")).toBeInTheDocument();
+    expect(screen.getByText("Mic live")).toBeInTheDocument();
+    expect(screen.getByText(/Desk Mic/)).toBeInTheDocument();
     expect(screen.getByText("Spotify")).toBeInTheDocument();
     expect(screen.getByText("System sounds")).toBeInTheDocument();
   });
 
-  it("mutes the master device and opens the main window", () => {
+  it("mutes the master output and opens the main window", () => {
     useStore.setState({ state: makeState() });
     render(<Flyout />);
     fireEvent.click(screen.getByRole("button", { name: "Mute Headphones" }));
@@ -5462,10 +5804,9 @@ import { useEffect } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import type { UiState } from "./types";
 
-/** Applies light/dark (system or forced) and the Windows accent colour. */
+/** Applies light/dark (system or forced). The brand violet accent is fixed by design. */
 export function useTheme(state: UiState | null) {
   const pref = state?.ui.theme ?? "system";
-  const accent = state?.accent;
 
   useEffect(() => {
     const mq = window.matchMedia("(prefers-color-scheme: dark)");
@@ -5484,10 +5825,6 @@ export function useTheme(state: UiState | null) {
     mq.addEventListener("change", apply);
     return () => mq.removeEventListener("change", apply);
   }, [pref]);
-
-  useEffect(() => {
-    if (accent) document.documentElement.style.setProperty("--accent", accent);
-  }, [accent]);
 }
 ```
 
@@ -5497,14 +5834,15 @@ import { useEffect } from "react";
 import { Maximize2 } from "lucide-react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { showMain } from "../lib/api";
+import { formatDb } from "../lib/levels";
 import { defaultMic, defaultOutput, run, useStore } from "../lib/store";
 import { AppRow } from "../components/AppRow";
+import { DbScale } from "../components/DbScale";
 import { Meter } from "../components/Meter";
-import { MicStrip } from "../components/MicStrip";
+import { MicKey } from "../components/MicKey";
 import { MuteButton } from "../components/MuteButton";
 import { Slider } from "../components/Slider";
 import { Toasts } from "../components/Toasts";
-import { Logo } from "../components/ui";
 
 export function Flyout() {
   const state = useStore((s) => s.state);
@@ -5518,62 +5856,57 @@ export function Flyout() {
   }, []);
 
   if (!state) {
-    return <div className="grid h-full place-items-center text-[13px] text-ink-3">Connecting to audio…</div>;
+    return <div className="grid h-full place-items-center text-[13px] text-dim">Connecting to audio…</div>;
   }
   const out = defaultOutput(state);
   const mic = defaultMic(state);
 
   return (
-    <div className="flex h-full flex-col gap-2.5 p-3">
-      <header className="flex items-center justify-between px-1 pt-0.5">
-        <div className="flex items-center gap-2 text-[13px] font-semibold tracking-wide">
-          <Logo size={16} /> Resonance
-        </div>
-        <button
-          type="button"
-          aria-label="Open Resonance"
-          title="Open Resonance"
-          onClick={() => showMain()}
-          className="grid h-7 w-7 place-items-center rounded-lg text-ink-2 hover:bg-surface-2 hover:text-ink"
-        >
-          <Maximize2 size={14} />
-        </button>
-      </header>
-
-      {out && (
-        <section className="rounded-2xl border border-line bg-surface-2 p-3">
-          <div className="mb-1.5 flex items-center justify-between text-[11px] uppercase tracking-wider text-ink-3">
-            <span>Output</span>
-            <span className="tabular normal-case">{Math.round(out.volume * 100)}%</span>
+    <div className="flex h-full flex-col overflow-hidden rounded-xl border border-groove bg-night">
+      <section aria-label="Master output" className="border-b border-groove bg-linear-to-b from-raised to-console px-[18px] pt-[18px] pb-4">
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <div className="text-[12px] text-fog">Playing through</div>
+            <div className="mt-0.5 truncate text-[16px] font-semibold tracking-[-0.01em]">{out?.name ?? "No output device"}</div>
           </div>
-          <div className="flex items-center gap-2">
-            <MuteButton
-              muted={out.muted}
-              label={out.name}
-              onToggle={() => run({ type: "setDeviceMute", id: out.id, muted: !out.muted })}
-            />
+          <button
+            type="button"
+            aria-label="Open Resonance"
+            title="Open Resonance"
+            onClick={() => showMain()}
+            className="-mt-1 -mr-1.5 grid h-[30px] w-[30px] place-items-center rounded-lg text-fog hover:bg-raised hover:text-paper"
+          >
+            <Maximize2 size={15} />
+          </button>
+        </div>
+        {out && (
+          <div className="mt-3.5 flex items-end gap-3">
             <div className="min-w-0 flex-1">
-              <div className="truncate text-[13px]">{out.name}</div>
-              <Slider
-                value={out.volume}
-                label={`${out.name} volume`}
-                onChange={(v) => run({ type: "setDeviceVolume", id: out.id, volume: v })}
-              />
-              <Meter source="master" />
+              <Meter source="master" className="mb-1.5" />
+              <Slider value={out.volume} label={`${out.name} volume`} onChange={(v) => run({ type: "setDeviceVolume", id: out.id, volume: v })} />
+              <DbScale kind="fader" orientation="horizontal" />
+            </div>
+            <div className="flex flex-col items-end gap-2">
+              <div className={`num text-[22px] leading-none font-medium tracking-[-0.02em] ${out.muted ? "text-coral" : ""}`}>
+                {out.muted ? "Muted" : formatDb(out.volume)}
+              </div>
+              <MuteButton muted={out.muted} label={out.name} onToggle={() => run({ type: "setDeviceMute", id: out.id, muted: !out.muted })} />
             </div>
           </div>
-        </section>
-      )}
+        )}
+      </section>
 
-      {mic && <MicStrip mic={mic} />}
+      <div className="border-b border-groove px-3.5 py-3">
+        <MicKey mic={mic} hotkey={state.mic.hotkey} size="wide" />
+      </div>
 
-      <section className="min-h-0 flex-1 overflow-y-auto rounded-2xl border border-line bg-surface p-1">
+      <div className="min-h-0 flex-1 overflow-y-auto py-1.5">
         {state.apps.length === 0 ? (
-          <p className="px-4 py-8 text-center text-[13px] text-ink-3">No apps are playing audio right now.</p>
+          <p className="px-6 py-10 text-center text-[13px] text-dim">No apps are playing audio right now.</p>
         ) : (
           state.apps.map((a) => <AppRow key={a.key} app={a} />)
         )}
-      </section>
+      </div>
       <Toasts />
     </div>
   );
@@ -5585,7 +5918,7 @@ export function Flyout() {
 Run: `npm.cmd test`
 Expected: PASS.
 
-- [ ] **Step 5: Wire `App.tsx` (temporary main view until Task 13)**
+- [ ] **Step 5: Wire `App.tsx` (placeholder main view until Task 13)**
 
 ```tsx
 import { useBootstrap } from "./lib/bootstrap";
@@ -5605,28 +5938,28 @@ export function App() {
 
 - [ ] **Step 6: See it running**
 
-Run: `npm.cmd run tauri dev`, play audio in any app, left-click the tray icon.
-Expected: the flyout shows your default output, your mic, and the playing app with a moving meter; dragging a slider changes that app's volume (verify in the Windows volume mixer); muting the mic turns its strip red and the tray icon gets the red badge.
+Run `npm.cmd run tauri dev`, play audio, left-click the tray icon.
+Expected: the flyout matches the mockup's "Tray flyout" artboard — raised master section with meter, fader, scale and dB readout; the violet mic key; app rows with real program icons, faders, thin meters and mute keys. Dragging a fader changes that app's volume in the Windows volume mixer; the mute key lights coral.
 
 - [ ] **Step 7: Commit**
 
 ```powershell
 git add -A
-git commit -m "feat(ui): bootstrap, theming and tray flyout"
+git commit -m "feat(ui): bootstrap, theme and tray flyout (Design v2)"
 ```
 
 ---
 
-### Task 13: Main window — titlebar, sidebar, Mixer, Devices, Microphone, Settings
+### Task 13: Main window — title bar nav, console mixer, Devices, Microphone, Settings
 
 **Files:**
-- Create: `src/views/MainWindow.tsx`, `Titlebar.tsx`, `Sidebar.tsx`, `MixerView.tsx`, `ChannelStrip.tsx`, `DevicesView.tsx`, `MicView.tsx`, `SettingsView.tsx`, `src/components/HotkeyRecorder.tsx`
+- Create: `src/views/MainWindow.tsx`, `Titlebar.tsx`, `MixerView.tsx`, `ChannelStrip.tsx`, `DevicesView.tsx`, `MicView.tsx`, `SettingsView.tsx`, `src/components/HotkeyRecorder.tsx`, `src/components/BoostKnob.tsx`, `src/components/ModeSwitch.tsx`
 - Modify: `src/App.tsx`
 - Test: `src/views/MixerView.test.tsx`, `src/views/DevicesView.test.tsx`, `src/views/MicView.test.tsx`
 
 **Interfaces:**
 - Consumes: everything above.
-- Produces: `<MainWindow />` with views `"mixer" | "devices" | "mic" | "settings"`.
+- Produces: `<MainWindow />`; `type View = "mixer" | "devices" | "mic" | "settings"` exported from `Titlebar.tsx`.
 
 - [ ] **Step 1: Write the failing view tests**
 
@@ -5644,21 +5977,25 @@ vi.mock("../lib/api", () => ({
 }));
 
 describe("MixerView", () => {
-  it("renders a master strip and one strip per app", () => {
+  beforeEach(() => vi.mocked(api.send).mockClear());
+
+  it("renders one channel per app and a master section", () => {
     const s = makeState();
     useStore.setState({ state: s });
     render(<MixerView state={s} />);
-    expect(screen.getByText("Master")).toBeInTheDocument();
+    expect(screen.getByText("Master output")).toBeInTheDocument();
     expect(screen.getByRole("slider", { name: "Spotify volume" })).toBeInTheDocument();
     expect(screen.getByRole("slider", { name: "System sounds volume" })).toBeInTheDocument();
+    expect(screen.getByRole("slider", { name: "Master volume" })).toBeInTheDocument();
   });
 
-  it("only offers output routing for non-system apps", () => {
+  it("offers output routing only for non-system apps", () => {
     const s = makeState();
     useStore.setState({ state: s });
     render(<MixerView state={s} />);
     expect(screen.getByRole("combobox", { name: "Output device for Spotify" })).toBeInTheDocument();
     expect(screen.queryByRole("combobox", { name: "Output device for System sounds" })).toBeNull();
+    expect(screen.getByText("Follows default")).toBeInTheDocument();
   });
 
   it("explains when routing is unavailable", () => {
@@ -5668,12 +6005,22 @@ describe("MixerView", () => {
     expect(screen.getByText(/isn't available on this Windows build/i)).toBeInTheDocument();
   });
 
-  it("master strip controls the default device", () => {
+  it("master section mutes the default device and switches it", () => {
     const s = makeState();
     useStore.setState({ state: s });
     render(<MixerView state={s} />);
     fireEvent.click(screen.getByRole("button", { name: "Mute Headphones" }));
     expect(api.send).toHaveBeenCalledWith({ type: "setDeviceMute", id: "out1", muted: true });
+    fireEvent.change(screen.getByRole("combobox", { name: "Master output device" }), { target: { value: "out2" } });
+    expect(api.send).toHaveBeenLastCalledWith({ type: "setDefaultDevice", id: "out2", role: "console" });
+  });
+
+  it("shows levels in dB", () => {
+    const s = makeState();
+    s.apps[0] = { ...s.apps[0], volume: 0.62 };
+    useStore.setState({ state: s });
+    render(<MixerView state={s} />);
+    expect(screen.getAllByText("−8.3 dB").length).toBeGreaterThan(0);
   });
 });
 ```
@@ -5698,11 +6045,11 @@ describe("DevicesView", () => {
     expect(screen.getByText("Unplugged")).toBeInTheDocument();
   });
 
-  it("sets default and communications devices", () => {
+  it("sets default and calls devices", () => {
     render(<DevicesView state={makeState()} />);
     fireEvent.click(screen.getByRole("button", { name: "Set Speakers as default" }));
     expect(api.send).toHaveBeenCalledWith({ type: "setDefaultDevice", id: "out2", role: "console" });
-    fireEvent.click(screen.getByRole("button", { name: "Set Speakers as communications device" }));
+    fireEvent.click(screen.getByRole("button", { name: "Use Speakers for calls" }));
     expect(api.send).toHaveBeenCalledWith({ type: "setDefaultDevice", id: "out2", role: "communications" });
   });
 
@@ -5751,38 +6098,39 @@ describe("MicView", () => {
     expect(screen.getByText(/no microphone found/i)).toBeInTheDocument();
   });
 
-  it("mutes the mic and shows the muted warning", () => {
+  it("mutes the mic and shows the muted state", () => {
     const s = makeState();
     const { rerender } = render(<MicView state={s} />);
     fireEvent.click(screen.getByRole("button", { name: "Mute microphone" }));
     expect(api.send).toHaveBeenCalledWith({ type: "setMicMute", muted: true });
     s.devices = s.devices.map((d) => (d.id === "mic1" ? { ...d, muted: true } : d));
     rerender(<MicView state={{ ...s }} />);
-    expect(screen.getByText(/your microphone is muted/i)).toBeInTheDocument();
+    expect(screen.getByText(/muted, apps can't hear you/i)).toBeInTheDocument();
   });
 
-  it("offers boost steps when the driver supports boost", () => {
+  it("turns the boost knob to a detent", () => {
     const s = makeState();
     s.devices = s.devices.map((d) => (d.id === "mic1" ? { ...d, boost: { db: 10, min: 0, max: 30, step: 10 } } : d));
     render(<MicView state={s} />);
+    expect(screen.getByRole("radio", { name: "+10 dB" })).toHaveAttribute("aria-checked", "true");
     fireEvent.click(screen.getByRole("radio", { name: "+20 dB" }));
     expect(api.send).toHaveBeenCalledWith({ type: "setMicBoost", id: "mic1", db: 20 });
   });
 
-  it("changes hotkey mode and records a new hotkey", () => {
+  it("changes shortcut behaviour and records a new shortcut", () => {
     render(<MicView state={makeState()} />);
     fireEvent.click(screen.getByRole("radio", { name: "Push to talk" }));
     expect(api.setMicHotkey).toHaveBeenCalledWith({ hotkey: "Ctrl+Shift+M", mode: "pushToTalk" });
-    fireEvent.click(screen.getByRole("button", { name: /ctrl/i }));
+    fireEvent.click(screen.getByRole("button", { name: /mute shortcut is ctrl/i }));
     fireEvent.keyDown(window, { code: "F13", key: "F13" });
     expect(api.setMicHotkey).toHaveBeenLastCalledWith({ hotkey: "F13", mode: "toggle" });
   });
 
-  it("switches the default input device", () => {
+  it("switches the default microphone", () => {
     const s = makeState();
     s.devices.push(makeDevice({ id: "mic2", name: "Headset Mic", flow: "capture" }));
     render(<MicView state={s} />);
-    fireEvent.change(screen.getByRole("combobox", { name: "Input device" }), { target: { value: "mic2" } });
+    fireEvent.change(screen.getByRole("combobox", { name: "Default microphone" }), { target: { value: "mic2" } });
     expect(api.send).toHaveBeenCalledWith({ type: "setDefaultDevice", id: "mic2", role: "console" });
   });
 });
@@ -5793,142 +6141,155 @@ describe("MicView", () => {
 Run: `npm.cmd test -- src/views`
 Expected: FAIL — unresolved `./MixerView`, `./DevicesView`, `./MicView`.
 
-- [ ] **Step 3: Implement the views**
+- [ ] **Step 3: Implement the mixer**
 
 `src/views/ChannelStrip.tsx`:
 ```tsx
-import { SlidersVertical } from "lucide-react";
+import { formatDb } from "../lib/levels";
 import { run } from "../lib/store";
-import type { App, Device } from "../lib/types";
+import type { App } from "../lib/types";
 import { AppIcon } from "../components/AppIcon";
+import { DbScale } from "../components/DbScale";
 import { DeviceSelect } from "../components/DeviceSelect";
 import { Meter } from "../components/Meter";
 import { MuteButton } from "../components/MuteButton";
 import { Slider } from "../components/Slider";
 
-type Props = { kind: "master"; device: Device } | { kind: "app"; app: App };
-
-interface Channel {
-  name: string;
-  caption: string;
-  volume: number;
-  muted: boolean;
-  source: string;
-  setVolume: (v: number) => void;
-  setMuted: (m: boolean) => void;
-}
-
-function channelFor(props: Props): Channel {
-  if (props.kind === "master") {
-    const d = props.device;
-    return {
-      name: d.name,
-      caption: "Master",
-      volume: d.volume,
-      muted: d.muted,
-      source: "master",
-      setVolume: (v) => run({ type: "setDeviceVolume", id: d.id, volume: v }),
-      setMuted: (m) => run({ type: "setDeviceMute", id: d.id, muted: m }),
-    };
-  }
-  const a = props.app;
-  return {
-    name: a.name,
-    caption: a.isSystem ? "System" : "App",
-    volume: a.volume,
-    muted: a.muted,
-    source: `app:${a.key}`,
-    setVolume: (v) => run({ type: "setAppVolume", key: a.key, volume: v }),
-    setMuted: (m) => run({ type: "setAppMute", key: a.key, muted: m }),
-  };
-}
-
-export function ChannelStrip(props: Props) {
-  const ch = channelFor(props);
-  const isMaster = props.kind === "master";
+/** One app channel on the console: identity, fader with engraved scale, ladder meter, readout, mute key, output patch. */
+export function ChannelStrip({ app }: { app: App }) {
   return (
-    <div
-      className={`flex w-32 shrink-0 flex-col items-center gap-3 rounded-2xl border p-3 ${
-        isMaster ? "border-accent/30 bg-surface-2" : "border-line bg-surface"
-      }`}
+    <section
+      aria-label={app.name}
+      className="flex w-[124px] shrink-0 flex-col gap-3.5 border-r border-groove px-3.5 pt-[18px] pb-4 shadow-[1px_0_0_rgb(255_255_255/0.025)]"
     >
-      <div className="flex h-10 items-center">
-        {props.kind === "master" ? (
-          <div className="grid h-9 w-9 place-items-center rounded-lg bg-accent/20 text-accent">
-            <SlidersVertical size={18} />
-          </div>
-        ) : (
-          <AppIcon app={props.app} size={36} />
-        )}
-      </div>
-      <div className="w-full text-center">
-        <div className="truncate text-[13px] font-medium" title={ch.name}>
-          {ch.name}
+      <div className="flex min-h-16 flex-col items-center gap-2">
+        <AppIcon app={app} size={34} />
+        <div className="w-full truncate text-center text-[13px] font-medium" title={app.name}>
+          {app.name}
         </div>
-        <div className="text-[10px] uppercase tracking-[0.14em] text-ink-3">{ch.caption}</div>
       </div>
-      <div className="flex min-h-40 flex-1 items-stretch gap-3 py-1">
-        <Slider orientation="vertical" value={ch.volume} label={`${ch.name} volume`} onChange={ch.setVolume} />
-        <Meter orientation="vertical" source={ch.source} />
+      <div className="flex min-h-[300px] flex-1 justify-center gap-1.5">
+        <DbScale kind="fader" />
+        <Slider orientation="vertical" value={app.volume} label={`${app.name} volume`} onChange={(v) => run({ type: "setAppVolume", key: app.key, volume: v })} />
+        <Meter orientation="vertical" source={`app:${app.key}`} className="ml-0.5" />
       </div>
-      <div className={`tabular text-sm ${ch.muted ? "text-danger" : "text-ink-2"}`}>{Math.round(ch.volume * 100)}</div>
-      <MuteButton muted={ch.muted} label={ch.name} onToggle={() => ch.setMuted(!ch.muted)} />
-      {props.kind === "app" && !props.app.isSystem && <DeviceSelect app={props.app} compact />}
-    </div>
+      <div className={`num text-center text-[13px] ${app.muted ? "text-coral" : "text-fog"}`}>{app.muted ? "Muted" : formatDb(app.volume)}</div>
+      <div className="flex justify-center">
+        <MuteButton variant="key" muted={app.muted} label={app.name} onToggle={() => run({ type: "setAppMute", key: app.key, muted: !app.muted })} />
+      </div>
+      {app.isSystem ? <div className="py-1.5 text-center text-[11px] text-dim">Follows default</div> : <DeviceSelect app={app} />}
+    </section>
   );
 }
 ```
 
 `src/views/MixerView.tsx`:
 ```tsx
-import { defaultOutput } from "../lib/store";
+import { ChevronDown } from "lucide-react";
+import { formatDb } from "../lib/levels";
+import { defaultOutput, outputs, run } from "../lib/store";
 import type { UiState } from "../lib/types";
+import { DbScale } from "../components/DbScale";
+import { Meter } from "../components/Meter";
+import { MuteButton } from "../components/MuteButton";
+import { Slider } from "../components/Slider";
 import { Banner, ViewHeader } from "../components/ui";
 import { ChannelStrip } from "./ChannelStrip";
 
+function subtitle(state: UiState, outName: string | undefined) {
+  const playing = state.apps.filter((a) => !a.isSystem).length;
+  if (!outName) return "No output device";
+  if (playing === 0) return `Nothing playing through ${outName}`;
+  return `${playing} ${playing === 1 ? "app" : "apps"} playing through ${outName}`;
+}
+
 export function MixerView({ state }: { state: UiState }) {
   const out = defaultOutput(state);
+  const outs = outputs(state);
+
   return (
-    <div className="flex h-full flex-col gap-4">
-      <ViewHeader title="Mixer" subtitle={out ? `Playing on ${out.name}` : "No output device"} />
+    <div className="flex h-full flex-col gap-5">
+      <ViewHeader title="Mixer" subtitle={subtitle(state, out?.name)} />
       {!state.routingAvailable && (
         <Banner>Per-app output selection isn't available on this Windows build. Volume and mute still work.</Banner>
       )}
-      <div className="flex min-h-0 flex-1 gap-3 overflow-x-auto pb-2">
-        {out && <ChannelStrip kind="master" device={out} />}
-        <div className="w-px shrink-0 bg-line" />
-        {state.apps.length === 0 ? (
-          <div className="grid flex-1 place-items-center text-[13px] text-ink-3">
-            Apps appear here as soon as they play sound.
+      <div className="console flex min-h-[560px] flex-1 overflow-hidden">
+        <div className="flex min-w-0 flex-1 overflow-x-auto">
+          {state.apps.length === 0 ? (
+            <div className="grid flex-1 place-items-center text-[13px] text-dim">Apps appear here as soon as they play sound.</div>
+          ) : (
+            state.apps.map((a) => <ChannelStrip key={a.key} app={a} />)
+          )}
+        </div>
+
+        <section
+          aria-label="Master output"
+          className="flex w-[212px] shrink-0 flex-col gap-3.5 border-l border-groove bg-linear-to-b from-raised to-console px-5 pt-[18px] pb-4"
+        >
+          <div className="flex min-h-16 flex-col justify-center gap-0.5">
+            <div className="text-[12px] text-fog">Master output</div>
+            {out ? (
+              <label className="relative block">
+                <select
+                  aria-label="Master output device"
+                  value={out.id}
+                  onChange={(e) => run({ type: "setDefaultDevice", id: e.currentTarget.value, role: "console" })}
+                  className="w-full appearance-none truncate border-0 bg-transparent py-0.5 pr-5 text-[15px] font-semibold tracking-[-0.01em] text-paper"
+                >
+                  {outs.map((d) => (
+                    <option key={d.id} value={d.id} className="bg-[var(--option-bg)]">
+                      {d.name}
+                    </option>
+                  ))}
+                </select>
+                <ChevronDown size={12} className="pointer-events-none absolute top-2 right-0 text-fog" />
+              </label>
+            ) : (
+              <div className="text-[15px] font-semibold text-dim">None</div>
+            )}
           </div>
-        ) : (
-          state.apps.map((a) => <ChannelStrip key={a.key} kind="app" app={a} />)
-        )}
+          {out && (
+            <>
+              <div className="flex min-h-[300px] flex-1 justify-center gap-2">
+                <DbScale kind="fader" />
+                <Slider orientation="vertical" value={out.volume} label="Master volume" onChange={(v) => run({ type: "setDeviceVolume", id: out.id, volume: v })} />
+                <Meter orientation="vertical" source="master" className="ml-1 w-2!" />
+              </div>
+              <div className={`num text-center text-[22px] font-medium tracking-[-0.02em] ${out.muted ? "text-coral" : ""}`}>
+                {out.muted ? "Muted" : formatDb(out.volume)}
+              </div>
+              <MuteButton variant="key" muted={out.muted} label={out.name} className="w-full" onToggle={() => run({ type: "setDeviceMute", id: out.id, muted: !out.muted })} />
+            </>
+          )}
+        </section>
       </div>
     </div>
   );
 }
 ```
 
+- [ ] **Step 4: Implement Devices**
+
 `src/views/DevicesView.tsx`:
 ```tsx
 import { useState } from "react";
 import { Eye, EyeOff, Mic, Pencil, Phone, Speaker, Star } from "lucide-react";
+import { formatDb } from "../lib/levels";
 import { run } from "../lib/store";
 import type { Device, UiState } from "../lib/types";
 import { MuteButton } from "../components/MuteButton";
 import { Slider } from "../components/Slider";
-import { Badge, IconButton, ViewHeader } from "../components/ui";
+import { Badge, IconButton, Panel, ViewHeader } from "../components/ui";
 
-function DeviceCard({ device: d }: { device: Device }) {
+function DeviceRow({ device: d }: { device: Device }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(d.alias ?? d.name);
   const active = d.state === "active";
 
   return (
-    <div className={`flex items-center gap-4 rounded-xl border border-line bg-surface px-4 py-3 ${active ? "" : "opacity-55"}`}>
-      <div className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-surface-2 text-ink-2">
-        {d.flow === "capture" ? <Mic size={18} /> : <Speaker size={18} />}
+    <div className={`flex items-center gap-4 border-b border-groove px-5 py-3.5 last:border-b-0 ${active ? "" : "opacity-55"}`}>
+      <div className="grid h-9 w-9 shrink-0 place-items-center rounded-[9px] bg-raised text-fog">
+        {d.flow === "capture" ? <Mic size={17} /> : <Speaker size={17} />}
       </div>
       <div className="min-w-0 flex-1">
         {editing ? (
@@ -5947,31 +6308,26 @@ function DeviceCard({ device: d }: { device: Device }) {
               onKeyDown={(e) => e.key === "Escape" && setEditing(false)}
               onBlur={() => setEditing(false)}
               placeholder={d.originalName}
-              className="w-full rounded-md border border-line bg-surface-2 px-2 py-1 text-[14px] select-text"
+              className="w-full rounded-md border border-groove bg-night px-2 py-1 text-[14px] select-text"
             />
           </form>
         ) : (
           <div className="flex items-baseline gap-2">
             <span className="truncate font-medium">{d.name}</span>
-            {d.alias && <span className="truncate text-[12px] text-ink-3">{d.originalName}</span>}
+            {d.alias && <span className="truncate text-[12px] text-dim">{d.originalName}</span>}
           </div>
         )}
         <div className="mt-1 flex flex-wrap gap-1.5">
           {d.defaultConsole && <Badge tone="accent">Default</Badge>}
-          {d.defaultComms && <Badge>Communications</Badge>}
+          {d.defaultComms && <Badge>Calls</Badge>}
           {!active && <Badge tone="muted">Unplugged</Badge>}
         </div>
       </div>
       {active && (
-        <div className="flex w-60 items-center gap-2">
-          <MuteButton
-            kind={d.flow === "capture" ? "mic" : "speaker"}
-            muted={d.muted}
-            label={d.name}
-            onToggle={() => run({ type: "setDeviceMute", id: d.id, muted: !d.muted })}
-          />
+        <div className="flex w-64 items-center gap-2.5">
+          <MuteButton kind={d.flow === "capture" ? "mic" : "speaker"} muted={d.muted} label={d.name} onToggle={() => run({ type: "setDeviceMute", id: d.id, muted: !d.muted })} />
           <Slider value={d.volume} label={`${d.name} volume`} onChange={(v) => run({ type: "setDeviceVolume", id: d.id, volume: v })} />
-          <span className="tabular w-8 text-right text-[12px] text-ink-2">{Math.round(d.volume * 100)}</span>
+          <span className="num w-16 text-right text-[12px] text-fog">{formatDb(d.volume)}</span>
         </div>
       )}
       <div className="flex items-center gap-0.5">
@@ -5981,10 +6337,7 @@ function DeviceCard({ device: d }: { device: Device }) {
           </IconButton>
         )}
         {active && !d.defaultComms && (
-          <IconButton
-            label={`Set ${d.name} as communications device`}
-            onClick={() => run({ type: "setDefaultDevice", id: d.id, role: "communications" })}
-          >
+          <IconButton label={`Use ${d.name} for calls`} onClick={() => run({ type: "setDefaultDevice", id: d.id, role: "communications" })}>
             <Phone size={16} />
           </IconButton>
         )}
@@ -5997,10 +6350,7 @@ function DeviceCard({ device: d }: { device: Device }) {
         >
           <Pencil size={16} />
         </IconButton>
-        <IconButton
-          label={d.hidden ? `Show ${d.name}` : `Hide ${d.name}`}
-          onClick={() => run({ type: "setDeviceHidden", id: d.id, hidden: !d.hidden })}
-        >
+        <IconButton label={d.hidden ? `Show ${d.name}` : `Hide ${d.name}`} onClick={() => run({ type: "setDeviceHidden", id: d.id, hidden: !d.hidden })}>
           {d.hidden ? <Eye size={16} /> : <EyeOff size={16} />}
         </IconButton>
       </div>
@@ -6013,28 +6363,143 @@ function DeviceSection({ title, devices }: { title: string; devices: Device[] })
   const visible = devices.filter((d) => !d.hidden);
   const hidden = devices.filter((d) => d.hidden);
   return (
-    <section className="flex flex-col gap-2">
-      <h2 className="text-[11px] font-semibold uppercase tracking-[0.14em] text-ink-3">{title}</h2>
-      {visible.map((d) => (
-        <DeviceCard key={d.id} device={d} />
-      ))}
-      {visible.length === 0 && <p className="text-[13px] text-ink-3">None connected.</p>}
+    <section className="flex flex-col gap-2.5">
+      <h2 className="m-0 text-[15px] font-medium text-fog">{title}</h2>
+      <Panel>
+        {visible.map((d) => (
+          <DeviceRow key={d.id} device={d} />
+        ))}
+        {visible.length === 0 && <p className="m-0 px-5 py-4 text-[13px] text-dim">None connected.</p>}
+        {showHidden && hidden.map((d) => <DeviceRow key={d.id} device={d} />)}
+      </Panel>
       {hidden.length > 0 && (
-        <button type="button" onClick={() => setShowHidden(!showHidden)} className="self-start text-[12px] text-ink-3 hover:text-ink">
+        <button type="button" onClick={() => setShowHidden(!showHidden)} className="self-start text-[12px] text-dim hover:text-paper">
           {showHidden ? "Collapse hidden devices" : `Show ${hidden.length} hidden`}
         </button>
       )}
-      {showHidden && hidden.map((d) => <DeviceCard key={d.id} device={d} />)}
     </section>
   );
 }
 
 export function DevicesView({ state }: { state: UiState }) {
   return (
-    <div className="flex max-w-5xl flex-col gap-6">
-      <ViewHeader title="Devices" subtitle="Defaults, names and levels for every output and input" />
+    <div className="flex max-w-5xl flex-col gap-7">
+      <ViewHeader title="Devices" subtitle="Choose defaults, rename and set levels for every output and input" />
       <DeviceSection title="Outputs" devices={state.devices.filter((d) => d.flow === "render")} />
       <DeviceSection title="Inputs" devices={state.devices.filter((d) => d.flow === "capture")} />
+    </div>
+  );
+}
+```
+
+- [ ] **Step 5: Implement the Microphone page and its controls**
+
+`src/components/BoostKnob.tsx`:
+```tsx
+import { run } from "../lib/store";
+import type { Device } from "../lib/types";
+import { Segmented } from "./ui";
+
+/** Detent angles for up to four positions, sweeping 270° from bottom-left to bottom-right. */
+const ANGLES = [-135, -45, 45, 135];
+const LABEL_SPOTS = [
+  { left: 4, bottom: 6 },
+  { left: 0, top: 4 },
+  { right: 0, top: 4 },
+  { right: 4, bottom: 6 },
+];
+
+/** Rotary mic-boost knob with clickable detents; falls back to a segmented control for unusual ranges. */
+export function BoostKnob({ mic }: { mic: Device }) {
+  const b = mic.boost!;
+  const steps: number[] = [];
+  if (b.step > 0) for (let v = b.min; v <= b.max + 1e-3; v += b.step) steps.push(Math.round(v * 10) / 10);
+  const current = Math.round(b.db * 10) / 10;
+  const label = (v: number) => (v === 0 ? "Off" : `+${v} dB`);
+  const set = (db: number) => run({ type: "setMicBoost", id: mic.id, db });
+
+  if (steps.length < 2 || steps.length > 4) {
+    return <Segmented label="Microphone boost" value={current} options={steps.map((v) => ({ value: v, label: label(v) }))} onChange={set} />;
+  }
+
+  const angles = steps.length === 4 ? ANGLES : steps.map((_, i) => -135 + (270 * i) / (steps.length - 1));
+  const index = Math.max(0, steps.findIndex((v) => v === current));
+  const rad = ((angles[index] - 90) * Math.PI) / 180;
+  const tip = { x: 84 + Math.cos(rad) * 25, y: 78 + Math.sin(rad) * 25 };
+  const dot = (a: number) => {
+    const r = ((a - 90) * Math.PI) / 180;
+    return { x: 84 + Math.cos(r) * 50, y: 78 + Math.sin(r) * 50 };
+  };
+
+  return (
+    <div className="relative h-[150px] w-[168px] shrink-0" role="radiogroup" aria-label="Microphone boost">
+      <svg width="168" height="150" viewBox="0 0 168 150" aria-hidden className="absolute inset-0">
+        {angles.map((a, i) => {
+          const p = dot(a);
+          return <circle key={a} cx={p.x} cy={p.y} r="2.5" fill={i === index ? "var(--accent)" : "var(--cap-edge)"} />;
+        })}
+        <circle cx="84" cy="78" r="36" fill="var(--raised)" stroke="var(--cap-edge)" strokeWidth="1" />
+        <circle cx="84" cy="78" r="33" fill="none" stroke="var(--groove)" strokeWidth="5" strokeDasharray="1.5 3" />
+        <circle cx="84" cy="78" r="26" fill="var(--console)" />
+        <line x1="84" y1="78" x2={tip.x} y2={tip.y} stroke="var(--paper)" strokeWidth="3" strokeLinecap="round" />
+        <circle cx="84" cy="78" r="3" fill="var(--paper)" />
+      </svg>
+      {steps.map((v, i) => (
+        <button
+          key={v}
+          type="button"
+          role="radio"
+          aria-checked={i === index}
+          onClick={() => set(v)}
+          style={{ position: "absolute", ...(steps.length === 4 ? LABEL_SPOTS[i] : { left: `${(i / (steps.length - 1)) * 80}%`, bottom: 0 }) }}
+          className={`border-0 bg-transparent p-1 text-[12px] ${i === index ? "font-semibold text-paper" : "text-dim hover:text-fog"}`}
+        >
+          {label(v)}
+        </button>
+      ))}
+      <div className="absolute right-0 -bottom-[18px] left-0 text-center text-[11px] text-dim">Boost</div>
+    </div>
+  );
+}
+```
+
+`src/components/ModeSwitch.tsx`:
+```tsx
+import type { HotkeyMode } from "../lib/types";
+
+const MODES: { value: HotkeyMode; label: string }[] = [
+  { value: "toggle", label: "Toggle" },
+  { value: "pushToTalk", label: "Push to talk" },
+  { value: "pushToMute", label: "Push to mute" },
+];
+
+/** Three-position lever switch for the mute shortcut's behaviour. */
+export function ModeSwitch({ value, onChange }: { value: HotkeyMode; onChange: (m: HotkeyMode) => void }) {
+  const index = Math.max(0, MODES.findIndex((m) => m.value === value));
+  return (
+    <div className="w-[300px] max-w-full">
+      <div aria-hidden className="relative h-[30px] rounded-lg bg-[var(--slot)] shadow-[inset_0_0_0_1px_var(--groove),inset_0_2px_5px_rgb(0_0_0/0.6)]">
+        <div
+          className="absolute top-[3px] bottom-[3px] w-[calc(33.33%-4px)] rounded-md border border-[var(--cap-edge)] bg-linear-to-b from-[var(--cap-hi)] to-[var(--cap-lo)] shadow-[0_3px_8px_var(--shadow)] transition-[left] duration-150"
+          style={{ left: `calc(${index * 33.33}% + 3px)` }}
+        >
+          <div className="absolute top-[7px] bottom-[7px] left-1/2 -ml-px w-0.5 rounded-sm bg-accent shadow-[0_0_6px_var(--accent)]" />
+        </div>
+      </div>
+      <div role="radiogroup" aria-label="Shortcut behaviour" className="mt-1.5 flex text-center">
+        {MODES.map((m, i) => (
+          <button
+            key={m.value}
+            type="button"
+            role="radio"
+            aria-checked={i === index}
+            onClick={() => onChange(m.value)}
+            className={`flex-1 border-0 bg-transparent py-1.5 text-[12px] ${i === index ? "font-semibold text-paper" : "text-dim hover:text-fog"}`}
+          >
+            {m.label}
+          </button>
+        ))}
+      </div>
     </div>
   );
 }
@@ -6046,18 +6511,7 @@ import { useEffect, useState } from "react";
 import { formatHotkey } from "../lib/hotkey";
 import { saveMicConfig } from "../lib/store";
 import type { MicConfig } from "../lib/types";
-
-function Keys({ combo }: { combo: string }) {
-  return (
-    <span className="flex gap-1">
-      {combo.split("+").map((k) => (
-        <kbd key={k} className="rounded-md border border-line bg-surface-2 px-1.5 py-0.5 font-mono text-[12px]">
-          {k}
-        </kbd>
-      ))}
-    </span>
-  );
-}
+import { Keycaps } from "./ui";
 
 export function HotkeyRecorder({ config }: { config: MicConfig }) {
   const [recording, setRecording] = useState(false);
@@ -6084,18 +6538,23 @@ export function HotkeyRecorder({ config }: { config: MicConfig }) {
   }, [recording, config]);
 
   return (
-    <div className="flex flex-col items-end gap-1">
+    <div className="flex flex-col items-start gap-1.5">
       <button
         type="button"
         onClick={() => setRecording((r) => !r)}
-        aria-label={recording ? "Recording hotkey" : config.hotkey ? `Hotkey ${config.hotkey}, click to change` : "Set hotkey"}
-        className={`min-w-44 rounded-lg border px-3 py-1.5 text-[13px] transition-colors ${
-          recording ? "border-accent bg-accent/15 text-ink" : "border-line bg-surface hover:bg-surface-2"
-        }`}
+        aria-label={recording ? "Recording shortcut" : config.hotkey ? `Mute shortcut is ${config.hotkey}. Change shortcut` : "Set a mute shortcut"}
+        className="flex items-center gap-1.5 border-0 bg-transparent p-0"
       >
-        {recording ? "Press a key combination…" : config.hotkey ? <Keys combo={config.hotkey} /> : "Not set"}
+        {recording ? (
+          <span className="mic-live rounded-lg border px-3 py-1.5 text-[13px]">Press a key combination…</span>
+        ) : config.hotkey ? (
+          <Keycaps combo={config.hotkey} />
+        ) : (
+          <span className="cap">Not set</span>
+        )}
+        {!recording && <span className="ml-2 text-[12px] text-lilac">Change</span>}
       </button>
-      {recording && <span className="text-[11px] text-ink-3">Esc to cancel · Backspace to clear</span>}
+      {recording && <span className="text-[11px] text-dim">Esc to cancel, Backspace to remove the shortcut</span>}
     </div>
   );
 }
@@ -6103,128 +6562,120 @@ export function HotkeyRecorder({ config }: { config: MicConfig }) {
 
 `src/views/MicView.tsx`:
 ```tsx
+import { Mic, MicOff } from "lucide-react";
 import { defaultMic, run, saveMicConfig } from "../lib/store";
-import type { Device, HotkeyMode, UiState } from "../lib/types";
+import type { UiState } from "../lib/types";
+import { BoostKnob } from "../components/BoostKnob";
+import { DbScale } from "../components/DbScale";
 import { HotkeyRecorder } from "../components/HotkeyRecorder";
 import { Meter } from "../components/Meter";
-import { MuteButton } from "../components/MuteButton";
+import { ModeSwitch } from "../components/ModeSwitch";
 import { Slider } from "../components/Slider";
-import { Banner, Field, Segmented, ViewHeader } from "../components/ui";
-
-function BoostControl({ mic }: { mic: Device }) {
-  const b = mic.boost!;
-  const steps: number[] = [];
-  if (b.step > 0) for (let v = b.min; v <= b.max + 1e-3; v += b.step) steps.push(Math.round(v * 10) / 10);
-  if (steps.length >= 2 && steps.length <= 7) {
-    return (
-      <Segmented
-        label="Microphone boost"
-        value={Math.round(b.db * 10) / 10}
-        options={steps.map((v) => ({ value: v, label: v === 0 ? "Off" : `+${v} dB` }))}
-        onChange={(db) => run({ type: "setMicBoost", id: mic.id, db })}
-      />
-    );
-  }
-  const range = b.max - b.min || 1;
-  return (
-    <div className="flex w-56 items-center gap-2">
-      <Slider
-        label="Microphone boost"
-        value={(b.db - b.min) / range}
-        onChange={(v) => run({ type: "setMicBoost", id: mic.id, db: b.min + v * range })}
-      />
-      <span className="tabular w-14 text-right text-[12px] text-ink-2">+{b.db.toFixed(1)} dB</span>
-    </div>
-  );
-}
-
-const MODES: { value: HotkeyMode; label: string }[] = [
-  { value: "toggle", label: "Toggle" },
-  { value: "pushToTalk", label: "Push to talk" },
-  { value: "pushToMute", label: "Push to mute" },
-];
+import { Banner, Field, Panel, ViewHeader } from "../components/ui";
 
 export function MicView({ state }: { state: UiState }) {
   const mic = defaultMic(state);
   const all = state.devices.filter((d) => d.flow === "capture" && d.state === "active");
   const comms = all.find((d) => d.defaultComms);
 
-  return (
-    <div className="flex max-w-3xl flex-col gap-6">
-      <ViewHeader title="Microphone" subtitle="Level, mute and hotkeys for your mic" />
-      {!mic ? (
+  if (!mic) {
+    return (
+      <div className="flex max-w-5xl flex-col gap-5">
+        <ViewHeader title="Microphone" />
         <Banner>No microphone found. Plug one in or enable it in Windows sound settings.</Banner>
-      ) : (
-        <>
-          <section className={`rounded-2xl border p-5 ${mic.muted ? "border-danger/40 bg-danger/10" : "border-line bg-surface"}`}>
-            <div className="flex items-center gap-4">
-              <MuteButton kind="mic" size="lg" muted={mic.muted} label="microphone" onToggle={() => run({ type: "setMicMute", muted: !mic.muted })} />
-              <div className="min-w-0 flex-1">
-                <div className="flex items-baseline justify-between">
-                  <span className="truncate font-medium">{mic.name}</span>
-                  <span className="tabular text-ink-2">{Math.round(mic.volume * 100)}%</span>
-                </div>
-                <Slider value={mic.volume} label="Microphone level" onChange={(v) => run({ type: "setDeviceVolume", id: mic.id, volume: v })} />
-                <Meter source="mic" className="mt-2 !h-2" />
-              </div>
-            </div>
-            {mic.muted && <p className="mt-3 text-[13px] text-danger">Your microphone is muted.</p>}
-          </section>
+      </div>
+    );
+  }
+  const live = !mic.muted;
 
-          <div className="rounded-2xl border border-line bg-surface px-5">
-            <Field label="Input device" hint="Used by apps set to the default microphone">
-              <select
-                aria-label="Input device"
-                className="rs-select w-60"
-                value={mic.id}
-                onChange={(e) => run({ type: "setDefaultDevice", id: e.currentTarget.value, role: "console" })}
-              >
-                {all.map((d) => (
-                  <option key={d.id} value={d.id}>
-                    {d.name}
-                  </option>
-                ))}
-              </select>
-            </Field>
-            <Field label="Communications device" hint="Used by Discord, Teams and calls when set to Default">
-              <select
-                aria-label="Communications device"
-                className="rs-select w-60"
-                value={comms?.id ?? ""}
-                onChange={(e) => e.currentTarget.value && run({ type: "setDefaultDevice", id: e.currentTarget.value, role: "communications" })}
-              >
-                {!comms && <option value="">None</option>}
-                {all.map((d) => (
-                  <option key={d.id} value={d.id}>
-                    {d.name}
-                  </option>
-                ))}
-              </select>
-            </Field>
-            {mic.boost && (
-              <Field label="Microphone boost" hint="Hardware gain applied before the level above">
-                <BoostControl mic={mic} />
-              </Field>
-            )}
-            <Field label="Mute hotkey" hint="Works system-wide, even in fullscreen games">
-              <HotkeyRecorder config={state.mic} />
-            </Field>
-            <Field label="Hotkey mode" hint="Push to talk keeps you muted until you hold the key">
-              <Segmented label="Hotkey mode" value={state.mic.mode} options={MODES} onChange={(mode) => saveMicConfig({ ...state.mic, mode })} />
-            </Field>
+  return (
+    <div className="flex flex-col gap-5">
+      <ViewHeader title="Microphone" subtitle={`${mic.name} is the mic every app hears by default`} />
+      <div className="flex flex-wrap items-stretch gap-5">
+        <section aria-label="Input channel" className="console flex min-w-0 flex-[3_1_560px] flex-col gap-6 px-7 py-6">
+          <div className="flex items-center gap-4">
+            <button
+              type="button"
+              aria-pressed={mic.muted}
+              aria-label={live ? "Mute microphone" : "Unmute microphone"}
+              onClick={() => run({ type: "setMicMute", muted: live })}
+              className={`grid h-16 w-16 shrink-0 place-items-center rounded-xl border ${live ? "mic-live text-lilac" : "mic-muted text-coral"}`}
+            >
+              {live ? <Mic size={26} strokeWidth={1.8} /> : <MicOff size={26} strokeWidth={1.8} />}
+            </button>
+            <div className="min-w-0 flex-1">
+              <div className={`flex items-center gap-2 text-[13px] ${live ? "text-lilac" : "text-coral"}`}>
+                <span className={`h-2 w-2 rounded-full ${live ? "led-live" : "led-muted"}`} />
+                {live ? "Live, apps can hear you" : "Muted, apps can't hear you"}
+              </div>
+              <div className="mt-1 truncate text-[20px] font-semibold tracking-[-0.015em]">{mic.name}</div>
+            </div>
           </div>
-        </>
-      )}
+
+          <div>
+            <Meter source="mic" className="h-3!" />
+            <div className="mt-1.5">
+              <DbScale kind="meter" orientation="horizontal" />
+            </div>
+          </div>
+
+          <div className="flex items-center gap-6 border-t border-groove pt-6">
+            <div className="min-w-0 flex-1">
+              <div className="mb-1.5 flex items-baseline justify-between">
+                <span className="text-[13px] text-fog">Input level</span>
+                <span className="num text-[14px]">{Math.round(mic.volume * 100)}%</span>
+              </div>
+              <Slider value={mic.volume} label="Input level" onChange={(v) => run({ type: "setDeviceVolume", id: mic.id, volume: v })} />
+            </div>
+            {mic.boost && <BoostKnob mic={mic} />}
+          </div>
+        </section>
+
+        <Panel className="min-w-0 flex-[2_1_380px] px-6 py-1.5">
+          <Field label="Default microphone" hint="What apps hear when they use the default mic" htmlFor="mic-default">
+            <select id="mic-default" className="field-select" value={mic.id} onChange={(e) => run({ type: "setDefaultDevice", id: e.currentTarget.value, role: "console" })}>
+              {all.map((d) => (
+                <option key={d.id} value={d.id}>
+                  {d.name}
+                </option>
+              ))}
+            </select>
+          </Field>
+          <Field label="For calls" hint="Discord, Teams and Zoom use this when set to Default" htmlFor="mic-comms">
+            <select
+              id="mic-comms"
+              className="field-select"
+              value={comms?.id ?? ""}
+              onChange={(e) => e.currentTarget.value && run({ type: "setDefaultDevice", id: e.currentTarget.value, role: "communications" })}
+            >
+              {!comms && <option value="">None</option>}
+              {all.map((d) => (
+                <option key={d.id} value={d.id}>
+                  {d.name}
+                </option>
+              ))}
+            </select>
+          </Field>
+          <Field label="Mute shortcut" hint="Works everywhere, including fullscreen games">
+            <HotkeyRecorder config={state.mic} />
+          </Field>
+          <Field label="Shortcut behaviour" hint="Push to talk keeps you muted until you hold the keys">
+            <ModeSwitch value={state.mic.mode} onChange={(mode) => saveMicConfig({ ...state.mic, mode })} />
+          </Field>
+        </Panel>
+      </div>
     </div>
   );
 }
 ```
 
+- [ ] **Step 6: Implement Settings, title bar and the main window**
+
 `src/views/SettingsView.tsx`:
 ```tsx
 import { run } from "../lib/store";
 import type { Theme, UiState } from "../lib/types";
-import { Field, Segmented, Toggle, ViewHeader } from "../components/ui";
+import { Field, Panel, Segmented, Toggle, ViewHeader } from "../components/ui";
 
 const THEMES: { value: Theme; label: string }[] = [
   { value: "system", label: "System" },
@@ -6235,32 +6686,22 @@ const THEMES: { value: Theme; label: string }[] = [
 export function SettingsView({ state }: { state: UiState }) {
   const ui = state.ui;
   return (
-    <div className="flex max-w-3xl flex-col gap-6">
+    <div className="flex max-w-3xl flex-col gap-5">
       <ViewHeader title="Settings" />
-      <div className="rounded-2xl border border-line bg-surface px-5">
+      <Panel className="px-6 py-1.5">
         <Field label="Theme">
           <Segmented label="Theme" value={ui.theme} options={THEMES} onChange={(theme) => run({ type: "setUiSettings", ui: { ...ui, theme } })} />
         </Field>
-        <Field label="Start minimized to tray" hint="Open only the tray icon when Resonance launches">
-          <Toggle
-            label="Start minimized to tray"
-            checked={ui.startMinimized}
-            onChange={(startMinimized) => run({ type: "setUiSettings", ui: { ...ui, startMinimized } })}
-          />
+        <Field label="Start in the tray" hint="Only show the tray icon when Resonance launches">
+          <Toggle label="Start in the tray" checked={ui.startMinimized} onChange={(startMinimized) => run({ type: "setUiSettings", ui: { ...ui, startMinimized } })} />
         </Field>
-        <Field label="Remembered app volumes" hint="Forget saved levels for apps that aren't running (running apps are re-remembered)">
-          <button
-            type="button"
-            onClick={() => run({ type: "resetAppMemory" })}
-            className="rounded-lg border border-line px-3 py-1.5 text-[13px] hover:bg-surface-2"
-          >
-            Clear
+        <Field label="Remembered app volumes" hint="Forget saved levels for apps that aren't running. Running apps are remembered again.">
+          <button type="button" onClick={() => run({ type: "resetAppMemory" })} className="key">
+            Forget saved volumes
           </button>
         </Field>
-      </div>
-      <p className="text-[12px] text-ink-3">
-        Resonance 0.1.0 · Settings and logs live in %APPDATA%\Resonance
-      </p>
+      </Panel>
+      <p className="m-0 text-[12px] text-dim">Resonance 0.1.0. Settings and logs are kept in %APPDATA%\Resonance.</p>
     </div>
   );
 }
@@ -6271,77 +6712,63 @@ export function SettingsView({ state }: { state: UiState }) {
 import type { ReactNode } from "react";
 import { Minus, Square, X } from "lucide-react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { defaultMic, useStore } from "../lib/store";
+import { MicKey } from "../components/MicKey";
 import { Logo } from "../components/ui";
 
-function TitleButton({ label, onClick, danger, children }: { label: string; onClick: () => void; danger?: boolean; children: ReactNode }) {
+export type View = "mixer" | "devices" | "mic" | "settings";
+
+const TABS: { id: View; label: string }[] = [
+  { id: "mixer", label: "Mixer" },
+  { id: "devices", label: "Devices" },
+  { id: "mic", label: "Microphone" },
+  { id: "settings", label: "Settings" },
+];
+
+function WindowButton({ label, onClick, close, children }: { label: string; onClick: () => void; close?: boolean; children: ReactNode }) {
   return (
     <button
       type="button"
       aria-label={label}
       onClick={onClick}
-      className={`grid h-full w-12 place-items-center text-ink-2 transition-colors ${danger ? "hover:bg-[#e81123] hover:text-white" : "hover:bg-surface-2 hover:text-ink"}`}
+      className={`grid h-full w-[46px] place-items-center border-0 bg-transparent text-fog transition-colors ${
+        close ? "hover:bg-[#e81123] hover:text-white" : "hover:bg-raised hover:text-paper"
+      }`}
     >
       {children}
     </button>
   );
 }
 
-export function Titlebar() {
+export function Titlebar({ view, onSelect }: { view: View; onSelect: (v: View) => void }) {
+  const state = useStore((s) => s.state);
   const win = getCurrentWindow();
   return (
-    <header data-tauri-drag-region className="flex h-10 shrink-0 items-center justify-between pl-4">
-      <div data-tauri-drag-region className="flex items-center gap-2 text-[13px] font-semibold tracking-wide">
+    <header data-tauri-drag-region className="flex h-[52px] shrink-0 items-center gap-8 border-b border-groove pl-5">
+      <div data-tauri-drag-region className="flex items-center gap-2.5 text-[15px] font-semibold tracking-[-0.01em]">
         <Logo /> Resonance
       </div>
+      <nav aria-label="Sections" className="flex gap-6">
+        {TABS.map((t) => (
+          <button key={t.id} type="button" className="tab" aria-current={view === t.id ? "page" : undefined} onClick={() => onSelect(t.id)}>
+            {t.label}
+          </button>
+        ))}
+      </nav>
+      <div data-tauri-drag-region className="h-full flex-1" />
+      {state && <MicKey mic={defaultMic(state)} hotkey={state.mic.hotkey} />}
       <div className="flex h-full">
-        <TitleButton label="Minimize" onClick={() => win.minimize()}>
+        <WindowButton label="Minimize" onClick={() => win.minimize()}>
           <Minus size={14} />
-        </TitleButton>
-        <TitleButton label="Maximize" onClick={() => win.toggleMaximize()}>
+        </WindowButton>
+        <WindowButton label="Maximize" onClick={() => win.toggleMaximize()}>
           <Square size={11} />
-        </TitleButton>
-        <TitleButton label="Close" danger onClick={() => win.close()}>
+        </WindowButton>
+        <WindowButton label="Close" close onClick={() => win.close()}>
           <X size={15} />
-        </TitleButton>
+        </WindowButton>
       </div>
     </header>
-  );
-}
-```
-
-`src/views/Sidebar.tsx`:
-```tsx
-import { Mic, Settings, SlidersVertical, Speaker } from "lucide-react";
-
-export type View = "mixer" | "devices" | "mic" | "settings";
-
-const ITEMS: { id: View; label: string; Icon: typeof Mic }[] = [
-  { id: "mixer", label: "Mixer", Icon: SlidersVertical },
-  { id: "devices", label: "Devices", Icon: Speaker },
-  { id: "mic", label: "Microphone", Icon: Mic },
-  { id: "settings", label: "Settings", Icon: Settings },
-];
-
-export function Sidebar({ view, onSelect, micMuted }: { view: View; onSelect: (v: View) => void; micMuted: boolean }) {
-  return (
-    <nav aria-label="Sections" className="flex w-52 shrink-0 flex-col gap-1 px-3 py-2">
-      {ITEMS.map(({ id, label, Icon }) => (
-        <button
-          key={id}
-          type="button"
-          aria-current={view === id ? "page" : undefined}
-          onClick={() => onSelect(id)}
-          className={`relative flex items-center gap-3 rounded-lg px-3 py-2 text-[13px] transition-colors ${
-            view === id ? "bg-surface-2 font-medium text-ink" : "text-ink-2 hover:bg-surface hover:text-ink"
-          }`}
-        >
-          {view === id && <span className="absolute left-0 top-2 bottom-2 w-[3px] rounded-full bg-accent" />}
-          <Icon size={16} />
-          {label}
-          {id === "mic" && micMuted && <span className="ml-auto h-2 w-2 rounded-full bg-danger" aria-label="muted" />}
-        </button>
-      ))}
-    </nav>
   );
 }
 ```
@@ -6349,39 +6776,34 @@ export function Sidebar({ view, onSelect, micMuted }: { view: View; onSelect: (v
 `src/views/MainWindow.tsx`:
 ```tsx
 import { useState } from "react";
-import { defaultMic, useStore } from "../lib/store";
+import { useStore } from "../lib/store";
 import { Toasts } from "../components/Toasts";
 import { DevicesView } from "./DevicesView";
 import { MicView } from "./MicView";
 import { MixerView } from "./MixerView";
 import { SettingsView } from "./SettingsView";
-import { Sidebar, type View } from "./Sidebar";
-import { Titlebar } from "./Titlebar";
+import { Titlebar, type View } from "./Titlebar";
 
 export function MainWindow() {
   const [view, setView] = useState<View>("mixer");
   const state = useStore((s) => s.state);
-  const micMuted = state ? (defaultMic(state)?.muted ?? false) : false;
 
   return (
     <div className="flex h-full flex-col">
-      <Titlebar />
-      <div className="flex min-h-0 flex-1">
-        <Sidebar view={view} onSelect={setView} micMuted={micMuted} />
-        <main className="min-w-0 flex-1 overflow-auto rounded-tl-2xl border-l border-t border-line bg-surface p-6">
-          {!state ? (
-            <div className="grid h-full place-items-center text-[13px] text-ink-3">Connecting to audio…</div>
-          ) : view === "mixer" ? (
-            <MixerView state={state} />
-          ) : view === "devices" ? (
-            <DevicesView state={state} />
-          ) : view === "mic" ? (
-            <MicView state={state} />
-          ) : (
-            <SettingsView state={state} />
-          )}
-        </main>
-      </div>
+      <Titlebar view={view} onSelect={setView} />
+      <main className="min-h-0 min-w-0 flex-1 overflow-auto p-7">
+        {!state ? (
+          <div className="grid h-full place-items-center text-[13px] text-dim">Connecting to audio…</div>
+        ) : view === "mixer" ? (
+          <MixerView state={state} />
+        ) : view === "devices" ? (
+          <DevicesView state={state} />
+        ) : view === "mic" ? (
+          <MicView state={state} />
+        ) : (
+          <SettingsView state={state} />
+        )}
+      </main>
       <Toasts />
     </div>
   );
@@ -6406,7 +6828,7 @@ export function App() {
 }
 ```
 
-- [ ] **Step 4: Run all frontend tests and the type-check/build**
+- [ ] **Step 7: Run all frontend tests and the type-check/build**
 
 Run:
 ```powershell
@@ -6415,15 +6837,15 @@ npm.cmd run build
 ```
 Expected: all tests PASS; `tsc --noEmit` clean; Vite build succeeds.
 
-- [ ] **Step 5: Visual check**
+- [ ] **Step 8: Visual check against the mockup**
 
-Run `npm.cmd run tauri dev`. Walk every view in dark and light theme (Settings → Theme), at 100% and 150% display scaling. Fix any layout issue found (clipped strips, overflowing selects, unreadable contrast) before committing.
+Run `npm.cmd run tauri dev` and compare each view with the mockup canvas (https://claude.ai/artifact/EVtcBLh5RfMA4vaJePa8re): console surface, fader caps and scales, ladder meters, lit keys, title-bar tabs and mic key, master section on the right, boost knob, mode switch. Check dark and light themes at 100% and 150% scaling. Fix any drift (clipped strips, overflowing selects, low-contrast text) before committing.
 
-- [ ] **Step 6: Commit**
+- [ ] **Step 9: Commit**
 
 ```powershell
 git add -A
-git commit -m "feat(ui): main window with mixer, devices, microphone and settings views"
+git commit -m "feat(ui): main window with console mixer, devices, microphone and settings (Design v2)"
 ```
 
 ---

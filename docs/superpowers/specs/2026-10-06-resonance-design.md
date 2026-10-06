@@ -160,3 +160,24 @@ sent to it over a channel. Notification callbacks forward to that thread.
   Lock-free parameter updates; no allocation on the audio thread. Offline DSP tests with known signals.
 - **Phase 4 — Profiles:** scene = snapshot of app volumes/routing, mic settings, headset mode/EQ, engine params;
   hotkeys per scene; start with Windows via registry Run key.
+
+## 12. Visual design (approved 2026-10-07)
+
+Mockup: https://claude.ai/artifact/EVtcBLh5RfMA4vaJePa8re (Mixer, Tray flyout, Microphone). This supersedes the
+sidebar/card layout described in section 6.
+
+- **Direction:** studio hardware console. Navigation is a row of tabs in the title bar, next to an always-visible
+  mic key (violet glow when live, lit coral when muted) and the window controls.
+- **Mixer:** one continuous console surface. Each app is a channel separated by grooves: real program icon, name,
+  vertical fader with a machined cap and engraved dB scale, segmented ladder meter, dB readout, illuminated Mute key,
+  output patch. The master bus sits on the right with its own device picker, larger meter and readout.
+- **Tray flyout:** raised master section (device, meter, fader, scale, big dB readout, mute), a wide mic key, then a
+  row per app with icon, dB readout, fader, thin meter and mute key.
+- **Microphone:** input channel panel (big mute key, live state, wide meter on a −60…0 dB scale, input level fader,
+  rotary boost knob with detents), plus settings: default mic, mic for calls, mute shortcut as keycaps, and a
+  three-position switch for Toggle / Push to talk / Push to mute.
+- **Tokens:** night #111117, console #18181f, raised #20202a, groove #2a2a35, paper #ecebf3, fog #9c9bab,
+  dim #807f8f, violet #8b6cff, lilac #c9b8ff, coral #ff6a5c. Meters run violet → lilac with coral only at clip.
+  The brand violet is fixed; the Windows accent colour is not applied.
+- **Type:** Geologica (bundled), tabular figures for readouts. Levels are shown in dB using dB = 40·log10(volume).
+- **Avoid:** all-caps labels, monospace data labels, identical card grids, middle-dot meta strings.
