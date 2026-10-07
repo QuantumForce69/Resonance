@@ -9,10 +9,11 @@ interface Props {
   orientation?: "horizontal" | "vertical";
   disabled?: boolean;
   className?: string;
+  valueText?: (value: number) => string;
 }
 
 /** Hardware-style fader (0..1). Holds its local value while dragging so backend echoes can't make it jump. */
-export function Slider({ value, onChange, label, orientation = "horizontal", disabled, className = "" }: Props) {
+export function Slider({ value, onChange, label, orientation = "horizontal", disabled, className = "", valueText }: Props) {
   const [local, setLocal] = useState<number | null>(null);
   const onChangeRef = useRef(onChange);
   onChangeRef.current = onChange;
@@ -32,7 +33,7 @@ export function Slider({ value, onChange, label, orientation = "horizontal", dis
       step={1}
       value={Math.round(shown * 100)}
       aria-label={label}
-      aria-valuetext={formatDb(shown)}
+      aria-valuetext={(valueText ?? formatDb)(shown)}
       disabled={disabled}
       className={`fader ${orientation === "vertical" ? "vertical" : ""} ${className}`}
       onChange={(e) => {

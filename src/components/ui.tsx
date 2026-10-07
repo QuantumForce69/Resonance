@@ -68,22 +68,25 @@ export function Segmented<T extends string | number>({
   options,
   onChange,
   label,
+  disabled = false,
 }: {
   value: T;
   options: { value: T; label: string }[];
   onChange: (v: T) => void;
   label: string;
+  disabled?: boolean;
 }) {
   return (
-    <div role="radiogroup" aria-label={label} className="inline-flex rounded-[9px] border border-groove bg-night p-0.5">
+    <div role="radiogroup" aria-label={label} className={`inline-flex rounded-[9px] border border-groove bg-night p-0.5 ${disabled ? "opacity-45" : ""}`}>
       {options.map((o) => (
         <button
           key={String(o.value)}
           type="button"
           role="radio"
           aria-checked={o.value === value}
+          disabled={disabled}
           onClick={() => onChange(o.value)}
-          className={`rounded-[7px] px-3 py-1 text-[13px] transition-colors ${
+          className={`rounded-[7px] px-3 py-1 text-[13px] transition-colors disabled:cursor-default ${
             o.value === value ? "bg-accent text-white" : "text-fog hover:text-paper"
           }`}
         >
@@ -94,15 +97,26 @@ export function Segmented<T extends string | number>({
   );
 }
 
-export function Toggle({ checked, onChange, label }: { checked: boolean; onChange: (v: boolean) => void; label: string }) {
+export function Toggle({
+  checked,
+  onChange,
+  label,
+  disabled = false,
+}: {
+  checked: boolean;
+  onChange: (v: boolean) => void;
+  label: string;
+  disabled?: boolean;
+}) {
   return (
     <button
       type="button"
       role="switch"
       aria-checked={checked}
       aria-label={label}
+      disabled={disabled}
       onClick={() => onChange(!checked)}
-      className={`relative h-6 w-11 rounded-full border transition-colors ${checked ? "border-accent bg-accent" : "border-groove bg-night"}`}
+      className={`relative h-6 w-11 rounded-full border transition-colors disabled:opacity-45 ${checked ? "border-accent bg-accent" : "border-groove bg-night"}`}
     >
       <span
         className={`absolute top-[3px] left-0 h-4 w-4 rounded-full bg-white shadow transition-transform ${checked ? "translate-x-[22px]" : "translate-x-[3px]"}`}
