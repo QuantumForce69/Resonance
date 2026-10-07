@@ -5,6 +5,7 @@ import * as api from "./api";
 vi.mock("./api", () => ({
   send: vi.fn(),
   setMicHotkey: vi.fn(),
+  sendHeadset: vi.fn(),
 }));
 
 describe("selectors", () => {
@@ -55,5 +56,23 @@ describe("toasts", () => {
     expect(errorMessage("x")).toBe("x");
     expect(errorMessage(new Error("boom"))).toBe("boom");
     expect(errorMessage(42)).toBe("Something went wrong");
+  });
+});
+
+import { runHeadset } from "./store";
+import { makeHeadset } from "../test/fixtures";
+
+describe("runHeadset", () => {
+  beforeEach(() => useStore.setState({ toasts: [] }));
+
+  it("toasts headset errors", async () => {
+    vi.mocked(api.sendHeadset).mockRejectedValueOnce({ code: "unavailable", message: "Space One isn't connected" });
+    expect(await runHeadset({ type: "retry" })).toBe(false);
+    expect(useStore.getState().toasts.at(-1)?.message).toBe("Space One isn't connected");
+  });
+
+  it("stores the latest headset state", () => {
+    useStore.getState().setHeadset(makeHeadset({ name: "x" }));
+    expect(useStore.getState().headset?.name).toBe("x");
   });
 });

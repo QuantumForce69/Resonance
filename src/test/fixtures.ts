@@ -50,3 +50,34 @@ export function makeState(p: Partial<UiState> = {}): UiState {
     ...p,
   };
 }
+
+import type { HeadsetState } from "../lib/types";
+
+export function makeHeadset(p: Partial<HeadsetState> = {}): HeadsetState {
+  return {
+    connection: { state: "connected" },
+    name: "soundcore Space One",
+    ambientMode: "noiseCanceling",
+    ncMode: "manual",
+    manualNc: 3,
+    adaptiveNc: 2,
+    transparency: 4,
+    windNoise: false,
+    battery: { level: 4, max: 5, charging: null },
+    eq: {
+      presets: [
+        { id: "SoundcoreSignature", name: "Soundcore Signature" },
+        { id: "Acoustic", name: "Acoustic" },
+      ],
+      preset: "SoundcoreSignature",
+      bandHz: [100, 200, 400, 800, 1600, 3200, 6400, 12800],
+      values: [0, 0, 0, 0, 0, 0, 0, 0],
+      min: -120,
+      max: 134,
+      fractionDigits: 1,
+    },
+    firmware: "06.87",
+    serial: "3035705028ABCDEF",
+    ...p,
+  };
+}

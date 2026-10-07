@@ -83,3 +83,58 @@ export interface CmdError {
   code: "notFound" | "unavailable" | "invalid" | "os";
   message: string;
 }
+
+export type AmbientMode = "noiseCanceling" | "transparency" | "normal";
+export type NcMode = "adaptive" | "manual";
+
+export type HeadsetConnection =
+  | { state: "connecting" }
+  | { state: "connected" }
+  | { state: "notFound" }
+  | { state: "disconnected"; retryInSecs: number };
+
+export interface Battery {
+  level: number;
+  max: number;
+  charging: boolean | null;
+}
+
+export interface EqPreset {
+  id: string;
+  name: string;
+}
+
+export interface HeadsetEq {
+  presets: EqPreset[];
+  preset: string | null;
+  bandHz: number[];
+  values: number[];
+  min: number;
+  max: number;
+  fractionDigits: number;
+}
+
+export interface HeadsetState {
+  connection: HeadsetConnection;
+  name: string | null;
+  ambientMode: AmbientMode | null;
+  ncMode: NcMode | null;
+  manualNc: number | null;
+  adaptiveNc: number | null;
+  transparency: number | null;
+  windNoise: boolean | null;
+  battery: Battery | null;
+  eq: HeadsetEq | null;
+  firmware: string | null;
+  serial: string | null;
+}
+
+export type HeadsetCommand =
+  | { type: "setAmbientMode"; mode: AmbientMode }
+  | { type: "setNcMode"; mode: NcMode }
+  | { type: "setManualNc"; level: number }
+  | { type: "setTransparency"; level: number }
+  | { type: "setWindNoise"; enabled: boolean }
+  | { type: "setEqPreset"; preset: string }
+  | { type: "setEqBands"; values: number[] }
+  | { type: "retry" };

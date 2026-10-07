@@ -13,3 +13,10 @@ export const onState = (cb: (s: UiState) => void): Promise<UnlistenFn> => listen
 export const onMeters = (cb: (m: MeterFrame) => void): Promise<UnlistenFn> =>
   listen<MeterFrame>("meters", (e) => cb(e.payload));
 export const onNotice = (cb: (e: CmdError) => void): Promise<UnlistenFn> => listen<CmdError>("notice", (e) => cb(e.payload));
+
+import type { HeadsetCommand, HeadsetState } from "./types";
+
+export const sendHeadset = (cmd: HeadsetCommand) => invoke<void>("headset_command", { cmd });
+export const getHeadset = () => invoke<HeadsetState>("get_headset");
+export const onHeadset = (cb: (h: HeadsetState) => void): Promise<UnlistenFn> =>
+  listen<HeadsetState>("headset", (e) => cb(e.payload));

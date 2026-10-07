@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import { getState, onMeters, onNotice, onState, takeNotices } from "./api";
+import { getHeadset, getState, onHeadset, onMeters, onNotice, onState, takeNotices } from "./api";
 import { ingestFrame } from "./meters";
 import { errorMessage, useStore } from "./store";
 
@@ -7,15 +7,19 @@ import { errorMessage, useStore } from "./store";
 export function useBootstrap() {
   useEffect(() => {
     let disposed = false;
-    const { setState, pushToast } = useStore.getState();
+    const { setState, setHeadset, pushToast } = useStore.getState();
     const unlisteners = [
       onState((s) => setState(s)),
+      onHeadset((h) => setHeadset(h)),
       onMeters(ingestFrame),
       onNotice((e) => pushToast("error", e.message)),
     ];
     getState()
       .then((s) => !disposed && setState(s))
       .catch((e) => pushToast("error", errorMessage(e)));
+    getHeadset()
+      .then((h) => !disposed && setHeadset(h))
+      .catch(() => {});
     takeNotices()
       .then((ns) => ns.forEach((n) => pushToast("error", n.message)))
       .catch(() => {});

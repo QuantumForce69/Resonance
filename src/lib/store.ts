@@ -1,6 +1,6 @@
 import { create } from "zustand";
-import { send, setMicHotkey } from "./api";
-import type { Command, Device, MicConfig, UiState } from "./types";
+import { send, sendHeadset, setMicHotkey } from "./api";
+import type { Command, Device, HeadsetCommand, HeadsetState, MicConfig, UiState } from "./types";
 
 export interface Toast {
   id: number;
@@ -10,8 +10,10 @@ export interface Toast {
 
 interface Store {
   state: UiState | null;
+  headset: HeadsetState | null;
   toasts: Toast[];
   setState: (s: UiState) => void;
+  setHeadset: (h: HeadsetState) => void;
   pushToast: (kind: Toast["kind"], message: string) => void;
   dismissToast: (id: number) => void;
 }
@@ -20,8 +22,10 @@ let nextToastId = 1;
 
 export const useStore = create<Store>((set) => ({
   state: null,
+  headset: null,
   toasts: [],
   setState: (state) => set({ state }),
+  setHeadset: (headset) => set({ headset }),
   pushToast: (kind, message) =>
     set((s) => ({
       toasts: [...s.toasts.filter((t) => t.message !== message), { id: nextToastId++, kind, message }].slice(-4),
@@ -37,10 +41,9 @@ export function errorMessage(e: unknown): string {
   return "Something went wrong";
 }
 
-/** Sends a command; failures become toasts. */
-export async function run(cmd: Command): Promise<boolean> {
+async function attempt(action: () => Promise<unknown>): Promise<boolean> {
   try {
-    await send(cmd);
+    await action();
     return true;
   } catch (e) {
     useStore.getState().pushToast("error", errorMessage(e));
@@ -48,16 +51,14 @@ export async function run(cmd: Command): Promise<boolean> {
   }
 }
 
+/** Sends an audio command; failures become toasts. */
+export const run = (cmd: Command) => attempt(() => send(cmd));
+
+/** Sends a headphone command; failures become toasts. */
+export const runHeadset = (cmd: HeadsetCommand) => attempt(() => sendHeadset(cmd));
+
 /** Registers the hotkey (validated by the backend) and persists it. */
-export async function saveMicConfig(config: MicConfig): Promise<boolean> {
-  try {
-    await setMicHotkey(config);
-    return true;
-  } catch (e) {
-    useStore.getState().pushToast("error", errorMessage(e));
-    return false;
-  }
-}
+export const saveMicConfig = (config: MicConfig) => attempt(() => setMicHotkey(config));
 
 export const outputs = (s: UiState): Device[] =>
   s.devices.filter((d) => d.flow === "render" && d.state === "active" && !d.hidden);
