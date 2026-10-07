@@ -6,6 +6,7 @@ mod fake;
 pub mod model;
 pub mod paths;
 pub mod settings;
+pub mod worker;
 
 pub fn run() {
     tauri::Builder::default()
