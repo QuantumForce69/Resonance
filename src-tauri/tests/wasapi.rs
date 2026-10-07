@@ -62,3 +62,38 @@ fn reads_peaks_without_panicking() {
     assert!((0.0..=1.0).contains(&p.master));
     b.stop_metering();
 }
+
+#[test]
+#[ignore]
+fn routing_is_available_on_this_machine() {
+    assert!(backend().routing_available(), "IAudioPolicyConfigFactory failed to activate");
+}
+
+#[test]
+#[ignore]
+fn icons_and_accent() {
+    let icon = resonance_lib::win::exe_icon_png_base64(r"C:\Windows\explorer.exe").expect("explorer icon");
+    assert!(icon.len() > 100);
+    let accent = resonance_lib::win::accent_hex();
+    assert!(accent.starts_with('#') && accent.len() == 7, "{accent}");
+}
+
+#[test]
+#[ignore]
+fn mic_meter_opens_and_reads() {
+    let mut b = backend();
+    let s = b.snapshot().unwrap();
+    let Some(mic) =
+        s.devices.iter().find(|d| d.flow == Flow::Capture && d.default_console && d.state == DeviceState::Active)
+    else {
+        eprintln!("no microphone; skipping");
+        return;
+    };
+    for _ in 0..10 {
+        let p = b.peaks(Some(&mic.id));
+        assert!((0.0..=1.0).contains(&p.mic));
+        std::thread::sleep(std::time::Duration::from_millis(30));
+    }
+    println!("mic: {} boost: {:?}", mic.name, mic.boost);
+    b.stop_metering();
+}
