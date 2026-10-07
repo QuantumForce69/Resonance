@@ -17,3 +17,25 @@ describe("peakToPosition", () => {
     expect(peakToPosition(10 ** (-80 / 20))).toBe(0);
   });
 });
+
+import { dbToFaderPosition, formatDb, volumeToDb } from "./levels";
+
+describe("fader dB helpers", () => {
+  it("maps volume to dB on a 40·log10 curve", () => {
+    expect(volumeToDb(1)).toBe(0);
+    expect(volumeToDb(0.62)).toBeCloseTo(-8.3, 1);
+    expect(volumeToDb(0)).toBe(-Infinity);
+  });
+
+  it("formats readouts with a real minus sign and one decimal", () => {
+    expect(formatDb(1)).toBe("0.0 dB");
+    expect(formatDb(0.62)).toBe("−8.3 dB");
+    expect(formatDb(0)).toBe("−∞ dB");
+  });
+
+  it("places scale ticks where the fader produces that dB", () => {
+    expect(dbToFaderPosition(0)).toBe(1);
+    expect(dbToFaderPosition(-10)).toBeCloseTo(0.562, 3);
+    expect(volumeToDb(dbToFaderPosition(-20))).toBeCloseTo(-20, 5);
+  });
+});
