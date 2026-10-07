@@ -5,6 +5,7 @@ import { showMain } from "../lib/api";
 import { formatDb } from "../lib/levels";
 import { defaultMic, defaultOutput, run, useStore } from "../lib/store";
 import { AppRow } from "../components/AppRow";
+import { HeadsetStrip } from "../components/HeadsetStrip";
 import { DbScale } from "../components/DbScale";
 import { Meter } from "../components/Meter";
 import { MicKey } from "../components/MicKey";
@@ -14,6 +15,7 @@ import { Toasts } from "../components/Toasts";
 
 export function Flyout() {
   const state = useStore((s) => s.state);
+  const headset = useStore((s) => s.headset);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -63,6 +65,8 @@ export function Flyout() {
           </div>
         )}
       </section>
+
+      {headset && <HeadsetStrip headset={headset} />}
 
       <div className="border-b border-groove px-3.5 py-3">
         <MicKey mic={mic} hotkey={state.mic.hotkey} size="wide" />

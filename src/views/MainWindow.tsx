@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useStore } from "../lib/store";
 import { Toasts } from "../components/Toasts";
 import { DevicesView } from "./DevicesView";
+import { HeadphonesView } from "./HeadphonesView";
 import { MicView } from "./MicView";
 import { MixerView } from "./MixerView";
 import { SettingsView } from "./SettingsView";
@@ -10,6 +11,7 @@ import { Titlebar, type View } from "./Titlebar";
 export function MainWindow() {
   const [view, setView] = useState<View>("mixer");
   const state = useStore((s) => s.state);
+  const headset = useStore((s) => s.headset);
 
   return (
     <div className="flex h-full flex-col">
@@ -23,6 +25,8 @@ export function MainWindow() {
           <DevicesView state={state} />
         ) : view === "mic" ? (
           <MicView state={state} />
+        ) : view === "headphones" ? (
+          <HeadphonesView headset={headset} />
         ) : (
           <SettingsView state={state} />
         )}

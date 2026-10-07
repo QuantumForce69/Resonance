@@ -5,12 +5,13 @@ import { defaultMic, useStore } from "../lib/store";
 import { MicKey } from "../components/MicKey";
 import { Logo } from "../components/ui";
 
-export type View = "mixer" | "devices" | "mic" | "settings";
+export type View = "mixer" | "devices" | "mic" | "headphones" | "settings";
 
 const TABS: { id: View; label: string }[] = [
   { id: "mixer", label: "Mixer" },
   { id: "devices", label: "Devices" },
   { id: "mic", label: "Microphone" },
+  { id: "headphones", label: "Headphones" },
   { id: "settings", label: "Settings" },
 ];
 

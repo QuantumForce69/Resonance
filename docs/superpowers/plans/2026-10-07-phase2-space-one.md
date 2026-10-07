@@ -1591,7 +1591,7 @@ export const AMBIENT_OPTIONS: { value: AmbientMode; label: string }[] = [
 
 export const LEVEL_OPTIONS = [1, 2, 3, 4, 5].map((n) => ({ value: n, label: String(n) }));
 
-export function isConnected(h: HeadsetState | null): h is HeadsetState {
+export function isConnected(h: HeadsetState | null): boolean {
   return h?.connection.state === "connected";
 }
 
