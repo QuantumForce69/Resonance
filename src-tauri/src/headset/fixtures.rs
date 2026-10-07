@@ -42,6 +42,8 @@ pub struct FakeDevice {
     pub writes: Mutex<Vec<Vec<(SettingId, Value)>>>,
     pub changes: watch::Sender<()>,
     pub status: watch::Sender<ConnectionStatus>,
+    /// When set, writes never complete (a stale Bluetooth link).
+    pub hang: std::sync::atomic::AtomicBool,
 }
 
 impl FakeDevice {
@@ -51,6 +53,7 @@ impl FakeDevice {
             writes: Mutex::new(Vec::new()),
             changes: watch::channel(()).0,
             status: watch::channel(ConnectionStatus::Connected).0,
+            hang: std::sync::atomic::AtomicBool::new(false),
         })
     }
 }
@@ -72,6 +75,9 @@ impl HeadsetDevice for FakeDevice {
     }
 
     async fn set_setting_values(&self, values: Vec<(SettingId, Value)>) -> Result<(), String> {
+        if self.hang.load(std::sync::atomic::Ordering::SeqCst) {
+            std::future::pending::<()>().await;
+        }
         {
             let mut settings = self.settings.lock().unwrap();
             for (id, value) in &values {

@@ -17,6 +17,12 @@ use super::{
 use crate::error::{AudioError, Result};
 
 pub const EQ_COALESCE: Duration = Duration::from_millis(100);
+/// A write that takes longer than this means the Bluetooth control link has gone stale.
+pub const WRITE_TIMEOUT: Duration = Duration::from_secs(5);
+
+fn no_response() -> AudioError {
+    AudioError::Unavailable("The headphones didn't respond, reconnecting".into())
+}
 
 /// Reconnect delays in seconds: 5, 10, 20, then 30 forever until reset.
 #[derive(Debug, Clone)]
@@ -179,8 +185,14 @@ async fn connected(found: &Found, inbox: &mut Inbox, sink: &impl HeadsetSink, st
             }
             () = &mut flush, if pending_eq.is_some() => {
                 let values = pending_eq.take().unwrap_or_default();
-                if let Err(e) = device.set_setting_values(vec![(SettingId::VolumeAdjustments, Value::I16Vec(values))]).await {
-                    tracing::warn!("couldn't apply EQ: {e}");
+                let write = device.set_setting_values(vec![(SettingId::VolumeAdjustments, Value::I16Vec(values))]);
+                match tokio::time::timeout(WRITE_TIMEOUT, write).await {
+                    Ok(Ok(())) => {}
+                    Ok(Err(e)) => tracing::warn!("couldn't apply EQ: {e}"),
+                    Err(_) => {
+                        tracing::warn!("EQ write timed out; reconnecting");
+                        return Exit::Disconnected;
+                    }
                 }
                 publish(state);
             }
@@ -207,12 +219,20 @@ async fn connected(found: &Found, inbox: &mut Inbox, sink: &impl HeadsetSink, st
                             sink.state(state);
                             let _ = reply.send(Ok(()));
                         } else {
-                            let result = device
-                                .set_setting_values(values)
-                                .await
-                                .map_err(|e| AudioError::Unavailable(format!("Couldn't change the headphones: {e}")));
-                            let _ = reply.send(result);
-                            publish(state);
+                            tracing::info!("headset command {cmd:?}");
+                            match tokio::time::timeout(WRITE_TIMEOUT, device.set_setting_values(values)).await {
+                                Ok(result) => {
+                                    let _ = reply.send(result.map_err(|e| {
+                                        AudioError::Unavailable(format!("Couldn't change the headphones: {e}"))
+                                    }));
+                                    publish(state);
+                                }
+                                Err(_) => {
+                                    tracing::warn!("headset command {cmd:?} timed out; reconnecting");
+                                    let _ = reply.send(Err(no_response()));
+                                    return Exit::Disconnected;
+                                }
+                            }
                         }
                     }
                 },
@@ -329,5 +349,36 @@ mod tests {
         let s = next_matching(&mut rx, |s| matches!(s.connection, Connection::Disconnected { .. })).await;
         assert_eq!(s.connection, Connection::Disconnected { retry_in_secs: 5 });
         assert_eq!(s.ambient_mode, None, "stale settings are cleared");
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn an_unresponsive_device_times_out_and_reconnects() {
+        let device = FakeDevice::new();
+        let connector = FakeConnector::new(vec![Ok(Some(device.clone())), Ok(Some(FakeDevice::new()))]);
+        let (handle, mut rx) = start(connector.clone());
+        next_matching(&mut rx, |s| s.connection == Connection::Connected).await;
+        device.hang.store(true, std::sync::atomic::Ordering::SeqCst);
+        let err = tokio::time::timeout(
+            Duration::from_secs(60),
+            handle.command(HeadsetCommand::SetAmbientMode { mode: AmbientMode::Transparency }),
+        )
+        .await
+        .expect("the command must not hang")
+        .unwrap_err();
+        assert_eq!(err.code(), "unavailable");
+        assert!(err.to_string().contains("didn't respond"), "{err}");
+        next_matching(&mut rx, |s| matches!(s.connection, Connection::Disconnected { .. })).await;
+        next_matching(&mut rx, |s| s.connection == Connection::Connected).await;
+        assert_eq!(*connector.calls.lock().unwrap(), 2);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn an_unresponsive_eq_write_also_reconnects() {
+        let device = FakeDevice::new();
+        let (handle, mut rx) = start(FakeConnector::new(vec![Ok(Some(device.clone()))]));
+        next_matching(&mut rx, |s| s.connection == Connection::Connected).await;
+        device.hang.store(true, std::sync::atomic::Ordering::SeqCst);
+        handle.command(HeadsetCommand::SetEqBands { values: vec![5; 8] }).await.unwrap();
+        next_matching(&mut rx, |s| matches!(s.connection, Connection::Disconnected { .. })).await;
     }
 }
