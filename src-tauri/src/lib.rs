@@ -2,6 +2,7 @@ mod app;
 pub mod app_state;
 pub mod backend;
 pub mod error;
+pub mod headset;
 #[cfg(test)]
 mod fake;
 pub mod model;
