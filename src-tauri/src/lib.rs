@@ -1,5 +1,7 @@
 pub mod error;
 pub mod model;
+pub mod paths;
+pub mod settings;
 
 pub fn run() {
     tauri::Builder::default()
