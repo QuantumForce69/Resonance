@@ -1,5 +1,5 @@
 use std::{
-    path::PathBuf,
+    path::{Path, PathBuf},
     sync::mpsc::{self, RecvTimeoutError},
     thread,
     time::{Duration, Instant},
@@ -102,13 +102,13 @@ where
     WorkerHandle { tx }
 }
 
-fn save(core: &AppCore<impl AudioBackend>, path: &PathBuf) {
+fn save(core: &AppCore<impl AudioBackend>, path: &Path) {
     if let Err(e) = core.settings().save(path) {
         tracing::error!("couldn't save settings: {e}");
     }
 }
 
-fn run_loop<B: AudioBackend>(core: &mut AppCore<B>, rx: &mpsc::Receiver<Msg>, path: &PathBuf, sink: &impl EventSink) {
+fn run_loop<B: AudioBackend>(core: &mut AppCore<B>, rx: &mpsc::Receiver<Msg>, path: &Path, sink: &impl EventSink) {
     if let Err(e) = core.refresh() {
         tracing::warn!("initial refresh failed: {e}");
     }

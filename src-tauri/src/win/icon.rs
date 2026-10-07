@@ -55,8 +55,8 @@ unsafe fn icon_to_png(icon: HICON) -> Option<Vec<u8>> {
         if lines == 0 {
             return None;
         }
-        let has_alpha = buf.chunks_exact(4).any(|p| p[3] != 0);
-        for px in buf.chunks_exact_mut(4) {
+        let has_alpha = buf.as_chunks::<4>().0.iter().any(|p| p[3] != 0);
+        for px in buf.as_chunks_mut::<4>().0 {
             px.swap(0, 2); // BGRA -> RGBA
             if !has_alpha {
                 px[3] = 255;
