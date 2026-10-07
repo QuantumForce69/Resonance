@@ -22,3 +22,8 @@ Prerequisites: Node 20+, Rust (MSVC), Visual Studio C++ Build Tools.
     npm.cmd run tauri build    # → src-tauri/target/release/bundle/nsis/
 
 Settings and logs: `%APPDATA%\Resonance`.
+
+
+## Licence
+
+GPL-3.0 (Resonance uses [OpenSCQ30](https://github.com/oppzippy/OpenSCQ30) for Soundcore headphone control). See `LICENSE`.

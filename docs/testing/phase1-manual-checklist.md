@@ -34,3 +34,14 @@ Run with `npm.cmd run tauri dev` (or the installed build). Tick each item.
 - [ ] Sleep and wake the PC → Resonance still works.
 - [ ] Corrupt `%APPDATA%\Resonance\settings.json` → app starts with defaults and a `settings.bad-*.json` backup exists.
 - [ ] CPU usage with the window hidden stays near 0%.
+
+
+## Phase 2 — Space One
+- [ ] Headphones tab shows the Space One as connected with battery, firmware and serial.
+- [ ] Mode lever switches noise cancelling / transparency / normal, and you hear the change.
+- [ ] Manual noise-cancelling levels 1–5 and transparency levels 1–5 apply; Adaptive shows its current level.
+- [ ] Wind-noise reduction toggles.
+- [ ] Choosing an EQ preset changes the sound; moving a fader switches the picker to Custom and the sound follows smoothly.
+- [ ] Pressing the headphones' own ANC button updates Resonance within about a second.
+- [ ] Turning the headphones off shows "Not connected, retrying…"; turning them on reconnects without clicking Retry.
+- [ ] The tray flyout strip shows battery and switches mode.
