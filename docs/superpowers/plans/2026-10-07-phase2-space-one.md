@@ -2011,13 +2011,13 @@ export function EqFaders({ eq, disabled, onChange }: { eq: HeadsetEq; disabled?:
   const span = eq.max - eq.min;
   const toDevice = (x: number) => Math.round(eq.min + x * span);
   return (
-    <div className="flex min-h-[260px] justify-between gap-2">
+    <div className="flex justify-between gap-2">
       {eq.bandHz.map((hz, i) => {
         const v = eq.values[i] ?? 0;
         return (
           <div key={hz} className="flex w-14 flex-col items-center gap-2">
             <div className="num text-[11px] text-fog">{formatEqValue(v, eq.fractionDigits)}</div>
-            <div className="flex min-h-[190px] flex-1 justify-center">
+            <div className="flex h-[200px] justify-center">
               <Slider
                 orientation="vertical"
                 value={(v - eq.min) / span}
