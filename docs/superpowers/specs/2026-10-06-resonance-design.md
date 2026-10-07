@@ -161,6 +161,15 @@ sent to it over a channel. Notification callbacks forward to that thread.
 - **Phase 4 — Profiles:** scene = snapshot of app volumes/routing, mic settings, headset mode/EQ, engine params;
   hotkeys per scene; start with Windows via registry Run key.
 
+## 11. Decisions made during Phase 1 planning
+
+- OS change detection polls every 250 ms instead of COM notification callbacks (single path that also handles
+  audio-service restarts and sleep/resume).
+- The worker emits the full `UiState` on change (`state` event) instead of patches.
+- Platform access goes through one `AudioBackend` trait (WASAPI implementation + fake for tests).
+- Per-app output routing is persisted by Windows itself; `settings.json` keeps only per-app volume/mute.
+- Settings JSON uses camelCase (e.g. `startMinimized`). Mic meters open a capture stream only while a window is visible.
+- Hotkey hold modes use tauri-plugin-global-shortcut press/release events instead of a low-level keyboard hook.
 ## 12. Visual design (approved 2026-10-07)
 
 Mockup: https://claude.ai/artifact/EVtcBLh5RfMA4vaJePa8re (Mixer, Tray flyout, Microphone). This supersedes the
