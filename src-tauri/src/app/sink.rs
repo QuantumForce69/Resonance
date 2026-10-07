@@ -43,3 +43,13 @@ impl EventSink for TauriSink {
         push_notice(&self.app, error.clone());
     }
 }
+
+pub struct HeadsetEvents {
+    pub app: AppHandle,
+}
+
+impl crate::headset::HeadsetSink for HeadsetEvents {
+    fn state(&self, state: &crate::headset::model::HeadsetState) {
+        let _ = self.app.emit("headset", state);
+    }
+}

@@ -29,6 +29,20 @@ pub fn run() {
                 sink::TauriSink { app: handle.clone() },
             );
             app.manage(worker);
+            let (headset, inbox) = crate::headset::HeadsetHandle::channel();
+            app.manage(headset);
+            let headset_sink = sink::HeadsetEvents { app: handle.clone() };
+            let demo = std::env::var_os("RESONANCE_DEMO_HEADSET").is_some();
+            tauri::async_runtime::spawn(async move {
+                match crate::headset::LibConnector::open(paths::data_dir().join("openscq30.sqlite"), demo).await {
+                    Ok(connector) => crate::headset::run(std::sync::Arc::new(connector), inbox, headset_sink).await,
+                    Err(e) => {
+                        tracing::error!("headphone support unavailable: {e}");
+                        use crate::headset::{model::{Connection, HeadsetState}, HeadsetSink};
+                        headset_sink.state(&HeadsetState::with_connection(Connection::NotFound));
+                    }
+                }
+            });
             tray::create(&handle)?;
             if let Err(e) = hotkeys::apply(&handle, &initial.mic) {
                 tracing::warn!("{e}");
@@ -47,6 +61,8 @@ pub fn run() {
             commands::set_mic_hotkey,
             commands::take_notices,
             commands::show_main,
+            commands::headset_command,
+            commands::get_headset,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Resonance");

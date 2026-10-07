@@ -8,7 +8,7 @@ use tauri::{AppHandle, Manager, PhysicalPosition, PhysicalSize, Rect, Window, Wi
 use crate::worker::WorkerHandle;
 
 const FLYOUT_W: f64 = 380.0;
-const FLYOUT_H: f64 = 600.0;
+const FLYOUT_H: f64 = 680.0;
 const MARGIN: f64 = 12.0;
 
 /// When the flyout last hid on focus loss: the tray click that caused it must not reopen it.

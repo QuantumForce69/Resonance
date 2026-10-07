@@ -53,3 +53,16 @@ pub fn show_main(app: AppHandle) {
     }
     wnd::show_main(&app);
 }
+
+#[tauri::command]
+pub async fn headset_command(
+    headset: State<'_, crate::headset::HeadsetHandle>,
+    cmd: crate::headset::model::HeadsetCommand,
+) -> Result<()> {
+    headset.command(cmd).await
+}
+
+#[tauri::command]
+pub async fn get_headset(headset: State<'_, crate::headset::HeadsetHandle>) -> Result<crate::headset::model::HeadsetState> {
+    headset.state().await
+}
