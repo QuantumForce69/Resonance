@@ -1,7 +1,7 @@
 use super::AppCore;
 use crate::{
     backend::AudioBackend,
-    engine::{AudioEngine, EngineParams, EngineStatus, ProcessingView, RestoreDefaults, Route},
+    engine::{AudioEngine, EngineParams, EngineStatus, ProcessingView, RestoreDefaults, Route, SourceSpec},
     error::AudioError,
     model::{Device, DeviceState, Flow, Role},
 };
@@ -47,6 +47,8 @@ pub struct ProcState {
     pub switched: bool,
     pub retry_in: u32,
     pub last_error: Option<String>,
+    /// The processes the engine was last told to capture into the call.
+    pub sources: Vec<SourceSpec>,
 }
 
 fn is_active_capture(devices: &[Device], id: &str) -> bool {
@@ -78,7 +80,7 @@ impl<B: AudioBackend> AppCore<B> {
             settings: self.settings.processing.clone(),
             status: self.engine_state.status.clone(),
             cable_installed: find_cable(&self.state.devices).is_some(),
-            call_available: false,
+            call_available: self.engine.supports_app_capture(),
         }
     }
 
@@ -105,6 +107,7 @@ impl<B: AudioBackend> AppCore<B> {
     }
 
     fn stop_engine(&mut self) {
+        self.engine_state.sources.clear();
         if self.engine_state.route.take().is_some() {
             self.engine.stop();
         }
@@ -188,6 +191,7 @@ impl<B: AudioBackend> AppCore<B> {
         if let Some(reason) = self.engine.failure() {
             if self.engine_state.route.take().is_some() {
                 self.engine.stop();
+                self.engine_state.sources.clear();
                 tracing::warn!("audio engine stopped: {reason}");
                 self.engine_state.last_error = Some(reason);
                 self.engine_state.retry_in = RETRY_REFRESHES;

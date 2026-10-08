@@ -1,8 +1,11 @@
-use std::sync::{Arc, Mutex, MutexGuard};
+use std::{
+    collections::HashMap,
+    sync::{Arc, Mutex, MutexGuard},
+};
 
 use crate::{
     backend::AudioBackend,
-    engine::{AudioEngine, EngineParams, Route},
+    engine::{AudioEngine, EngineParams, Route, SourceSpec},
     error::{AudioError, Result},
     model::*,
 };
@@ -16,6 +19,7 @@ pub struct FakeBackend {
     pub snapshots: usize,
     pub peaks: Peaks,
     pub fail_next_snapshot: bool,
+    pub parents: HashMap<u32, u32>,
 }
 
 impl FakeBackend {
@@ -132,6 +136,10 @@ impl AudioBackend for FakeBackend {
     fn stop_metering(&mut self) {
         self.calls.push("stop_metering".into());
     }
+
+    fn process_parents(&mut self) -> HashMap<u32, u32> {
+        self.parents.clone()
+    }
 }
 
 #[derive(Debug, Default)]
@@ -143,6 +151,11 @@ pub struct EngineLog {
     pub fail_start: Option<String>,
     pub failure: Option<String>,
     pub peaks: (f32, f32),
+    pub sources: Vec<SourceSpec>,
+    pub source_updates: usize,
+    /// Processes whose capture fails to open.
+    pub fail_pids: Vec<u32>,
+    pub no_app_capture: bool,
 }
 
 /// Records what the app asks of the engine; tests keep a clone to inspect and steer it.
@@ -172,6 +185,7 @@ impl AudioEngine for FakeEngine {
         if log.running.take().is_some() {
             log.stops += 1;
         }
+        log.sources.clear();
         log.failure = None;
     }
 
@@ -186,5 +200,18 @@ impl AudioEngine for FakeEngine {
 
     fn take_peaks(&self) -> (f32, f32) {
         self.log().peaks
+    }
+
+    fn set_sources(&mut self, sources: &[SourceSpec]) -> Vec<AudioError> {
+        let mut log = self.log();
+        log.source_updates += 1;
+        let (failed, ok): (Vec<SourceSpec>, Vec<SourceSpec>) =
+            sources.iter().cloned().partition(|s| log.fail_pids.contains(&s.pid));
+        log.sources = ok;
+        failed.into_iter().map(|s| AudioError::Unavailable(format!("Couldn't capture {}", s.key))).collect()
+    }
+
+    fn supports_app_capture(&self) -> bool {
+        !self.log().no_app_capture
     }
 }

@@ -29,6 +29,15 @@ pub struct EngineParams {
     pub call: CallSettings,
 }
 
+/// One process captured into the call, at a send level.
+#[derive(Debug, Clone, PartialEq)]
+pub struct SourceSpec {
+    /// The app it belongs to (for messages).
+    pub key: String,
+    pub pid: u32,
+    pub level: f32,
+}
+
 /// The real-time processing engine (WASAPI in production, a fake in tests). Owned by the audio worker.
 pub trait AudioEngine: Send {
     /// Opens the devices and starts processing; returns once audio flows or the devices failed to open.
@@ -40,6 +49,11 @@ pub trait AudioEngine: Send {
     fn failure(&self) -> Option<String>;
     /// Highest linear peaks before and after processing since the last call.
     fn take_peaks(&self) -> (f32, f32);
+    /// Makes the running engine capture exactly these processes into the call. Returns problems to show
+    /// (a capture that couldn't open); those processes are skipped.
+    fn set_sources(&mut self, sources: &[SourceSpec]) -> Vec<AudioError>;
+    /// Whether Windows can capture single apps (process loopback).
+    fn supports_app_capture(&self) -> bool;
 }
 
 /// Stands in until a real engine is installed; processing reports itself unavailable.
@@ -56,5 +70,11 @@ impl AudioEngine for NullEngine {
     }
     fn take_peaks(&self) -> (f32, f32) {
         (0.0, 0.0)
+    }
+    fn set_sources(&mut self, _: &[SourceSpec]) -> Vec<AudioError> {
+        Vec::new()
+    }
+    fn supports_app_capture(&self) -> bool {
+        false
     }
 }

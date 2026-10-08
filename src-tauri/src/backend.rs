@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use crate::{
     error::Result,
     model::{Peaks, Role, Snapshot},
@@ -21,4 +23,8 @@ pub trait AudioBackend {
     fn peaks(&mut self, mic_device_id: Option<&str>) -> Peaks;
     /// Releases any capture stream opened for metering.
     fn stop_metering(&mut self);
+    /// Parent process ID of every running process (to skip child processes of a sent app).
+    fn process_parents(&mut self) -> HashMap<u32, u32> {
+        HashMap::new()
+    }
 }

@@ -4,8 +4,12 @@ mod tests;
 mod processing;
 #[cfg(test)]
 mod processing_tests;
+mod call;
+#[cfg(test)]
+mod call_tests;
 
 pub use group::{app_key, group_sessions, SYSTEM_KEY};
+pub use call::root_pids;
 pub use processing::{find_cable, Cable, RETRY_REFRESHES};
 
 use std::collections::{HashMap, HashSet};
@@ -90,6 +94,7 @@ let mut core = Self {
         if self.reconcile_processing() {
             self.state = self.read_state()?;
         }
+        self.sync_sources();
         self.state.processing = self.processing_view();
         Ok(self.state != previous)
     }
@@ -319,9 +324,7 @@ let mut core = Self {
                 self.settings.apps.clear();
                 self.settings_dirty = true;
             }
-            Command::SetAppSend { .. } => {
-                return Err(AudioError::Unavailable("Sending apps into calls isn't available yet".into()));
-            }
+            Command::SetAppSend { key, level } => self.set_app_send(&key, level)?,
             Command::SetProcessing { processing } => {
                 let mut p = processing;
                 p.dsp = p.dsp.clamped();
@@ -334,6 +337,7 @@ let mut core = Self {
                 if self.reconcile_processing() {
                     self.refresh()?;
                 }
+                self.sync_sources();
                 self.state.processing = self.processing_view();
             }
         }

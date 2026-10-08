@@ -28,7 +28,7 @@ use crate::{
         dsp::{chain::Chain, FRAME},
         feed::{Feed, TARGET_QUEUE},
         fifo::Fifo,
-        AudioEngine, EngineParams, Route,
+        AudioEngine, EngineParams, Route, SourceSpec,
     },
     error::{AudioError, Result},
 };
@@ -355,6 +355,15 @@ impl AudioEngine for WasapiEngine {
         self.running
             .as_ref()
             .map_or((0.0, 0.0), |r| (take_peak(&r.shared.peak_in), take_peak(&r.shared.peak_out)))
+    }
+
+    // Replaced in the next task by process-loopback capture.
+    fn set_sources(&mut self, _: &[SourceSpec]) -> Vec<AudioError> {
+        Vec::new()
+    }
+
+    fn supports_app_capture(&self) -> bool {
+        false
     }
 }
 
