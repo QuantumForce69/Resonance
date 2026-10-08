@@ -1,6 +1,6 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { Flyout } from "./Flyout";
-import { makeState } from "../test/fixtures";
+import { makeProcessing, makeState } from "../test/fixtures";
 import { useStore } from "../lib/store";
 import * as api from "../lib/api";
 
@@ -12,6 +12,16 @@ vi.mock("../lib/api", () => ({
 vi.mock("@tauri-apps/api/window", () => ({ getCurrentWindow: () => ({ hide: vi.fn() }) }));
 
 describe("Flyout", () => {
+  it("tags the mic key while processing is running", () => {
+    useStore.setState({ state: makeState() });
+    const { unmount } = render(<Flyout />);
+    expect(screen.queryByText("Processed")).toBeNull();
+    unmount();
+    useStore.setState({ state: makeState({ processing: makeProcessing({ status: { state: "running" } }) }) });
+    render(<Flyout />);
+    expect(screen.getByText("Processed")).toBeInTheDocument();
+  });
+
   it("shows a loading state before the first state arrives", () => {
     useStore.setState({ state: null });
     render(<Flyout />);

@@ -3,6 +3,7 @@ import { Maximize2 } from "lucide-react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { showMain } from "../lib/api";
 import { formatDb } from "../lib/levels";
+import { isProcessed } from "../lib/processing";
 import { defaultMic, defaultOutput, run, toggleDeviceMute, useStore } from "../lib/store";
 import { AppRow } from "../components/AppRow";
 import { HeadsetStrip } from "../components/HeadsetStrip";
@@ -68,7 +69,7 @@ export function Flyout() {
       <HeadsetStrip />
 
       <div className="border-b border-groove px-3.5 py-3">
-        <MicKey mic={mic} hotkey={state.mic.hotkey} size="wide" />
+        <MicKey mic={mic} hotkey={state.mic.hotkey} size="wide" processed={isProcessed(state)} />
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto py-1.5">

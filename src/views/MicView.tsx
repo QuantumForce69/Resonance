@@ -8,6 +8,8 @@ import { Meter } from "../components/Meter";
 import { ModeSwitch } from "../components/ModeSwitch";
 import { Slider } from "../components/Slider";
 import { Banner, Field, Panel, ViewHeader } from "../components/ui";
+import { isProcessed } from "../lib/processing";
+import { ProcessingPanel } from "./ProcessingPanel";
 
 export function MicView({ state }: { state: UiState }) {
   const mic = defaultMic(state);
@@ -26,7 +28,10 @@ export function MicView({ state }: { state: UiState }) {
 
   return (
     <div className="flex flex-col gap-5">
-      <ViewHeader title="Microphone" subtitle={`${mic.name} is the mic every app hears by default`} />
+      <ViewHeader
+        title="Microphone"
+        subtitle={isProcessed(state) ? "Apps hear your mic through Resonance's processing" : `${mic.name} is the mic every app hears by default`}
+      />
       <div className="flex flex-wrap items-stretch gap-5">
         <section aria-label="Input channel" className="console flex min-w-0 flex-[3_1_560px] flex-col gap-6 px-7 py-6">
           <div className="flex items-center gap-4">
@@ -100,6 +105,7 @@ export function MicView({ state }: { state: UiState }) {
           </Field>
         </Panel>
       </div>
+      <ProcessingPanel state={state} />
     </div>
   );
 }

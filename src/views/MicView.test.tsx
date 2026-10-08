@@ -1,14 +1,21 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { MicView } from "./MicView";
-import { makeDevice, makeState } from "../test/fixtures";
+import { makeDevice, makeProcessing, makeState } from "../test/fixtures";
 import * as api from "../lib/api";
 
 vi.mock("../lib/api", () => ({
   send: vi.fn().mockResolvedValue(undefined),
   setMicHotkey: vi.fn().mockResolvedValue(undefined),
+  openVbCable: vi.fn().mockResolvedValue(undefined),
 }));
 
 describe("MicView", () => {
+  it("shows the processing section and says when apps hear the processed mic", () => {
+    render(<MicView state={makeState({ processing: makeProcessing({ status: { state: "running" } }) })} />);
+    expect(screen.getByRole("region", { name: "Processing" })).toBeInTheDocument();
+    expect(screen.getByText(/apps hear your mic through resonance's processing/i)).toBeInTheDocument();
+  });
+
   beforeEach(() => {
     vi.mocked(api.send).mockClear();
     vi.mocked(api.setMicHotkey).mockClear();

@@ -111,7 +111,7 @@ export function Knob({ label, value, min, max, step, onChange, format, size = "m
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}
         onPointerCancel={onPointerUp}
-        className={`touch-none rounded-full outline-offset-2 ${disabled ? "cursor-default" : "cursor-ns-resize"}`}
+        className={`touch-none rounded-full outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent ${disabled ? "cursor-default" : "cursor-ns-resize"}`}
         style={{ width: px, height: px }}
       >
         <svg width={px} height={px} viewBox={`0 0 ${px} ${px}`} aria-hidden>
