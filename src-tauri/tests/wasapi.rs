@@ -97,3 +97,26 @@ fn mic_meter_opens_and_reads() {
     println!("mic: {} boost: {:?}", mic.name, mic.boost);
     b.stop_metering();
 }
+
+/// A default-device change made by someone else (here: a second backend) must reach a backend
+/// that caches the topology, through Windows' change notification. Uses the communications
+/// microphone so nothing audible changes, and restores it.
+#[test]
+#[ignore]
+fn external_default_change_is_noticed() {
+    let mut watcher = backend();
+    let mut other = backend();
+    let s = watcher.snapshot().unwrap();
+    let mics: Vec<_> = s.devices.iter().filter(|d| d.flow == Flow::Capture && d.state == DeviceState::Active).collect();
+    let (Some(original), Some(target)) = (mics.iter().find(|d| d.default_comms), mics.iter().find(|d| !d.default_comms)) else {
+        eprintln!("need two microphones; skipping");
+        return;
+    };
+    let (original, target) = (original.id.clone(), target.id.clone());
+    other.snapshot().unwrap();
+    other.set_default_device(&target, Role::Communications).unwrap();
+    std::thread::sleep(std::time::Duration::from_millis(300));
+    let seen = watcher.snapshot().unwrap().devices.into_iter().find(|d| d.id == target).unwrap().default_comms;
+    other.set_default_device(&original, Role::Communications).unwrap();
+    assert!(seen, "the caching backend did not notice the external default change");
+}

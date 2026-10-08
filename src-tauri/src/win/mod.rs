@@ -8,6 +8,7 @@ pub mod meter;
 mod policy;
 mod procinfo;
 pub mod routing;
+mod watcher;
 mod util;
 
 pub use accent::accent_hex;

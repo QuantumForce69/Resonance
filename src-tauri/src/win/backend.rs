@@ -4,8 +4,9 @@ use windows::core::Interface;
 use windows::Win32::Foundation::S_OK;
 use windows::Win32::Media::Audio::{
     eCapture, eCommunications, eConsole, eMultimedia, eRender, AudioSessionStateExpired,
-    Endpoints::IAudioMeterInformation, IAudioSessionControl2, IAudioSessionManager2, IAudioVolumeLevel, IMMDevice,
-    IMMDeviceEnumerator, ISimpleAudioVolume, DEVICE_STATE, DEVICE_STATE_ACTIVE, DEVICE_STATE_UNPLUGGED,
+    Endpoints::{IAudioEndpointVolume, IAudioMeterInformation},
+    IAudioSessionControl2, IAudioSessionManager2, IAudioVolumeLevel, IMMDevice, IMMDeviceEnumerator, ISimpleAudioVolume,
+    DEVICE_STATE, DEVICE_STATE_ACTIVE, DEVICE_STATE_UNPLUGGED,
 };
 use windows::Win32::System::Com::CLSCTX_ALL;
 
@@ -18,6 +19,7 @@ use super::{
     procinfo::{self, ProcLookup},
     routing::Routing,
     util::take_pwstr,
+    watcher::DeviceWatch,
 };
 use crate::{
     backend::AudioBackend,
@@ -25,15 +27,39 @@ use crate::{
     model::*,
 };
 
+/// Safety net: re-read the device topology at least this often (in polls) even if Windows
+/// never sends a change notification. At the 250 ms poll rate this is every 5 s.
+const FULL_REFRESH_POLLS: u32 = 20;
+
 struct SessionHandle {
     volume: ISimpleAudioVolume,
     meter: IAudioMeterInformation,
 }
 
+/// Everything about an endpoint that only changes when Windows reports a topology change.
+struct Endpoint {
+    id: String,
+    device: IMMDevice,
+    flow: Flow,
+    state: DeviceState,
+    name: String,
+    /// Active endpoints only.
+    volume: Option<IAudioEndpointVolume>,
+    /// Active outputs only.
+    sessions: Option<IAudioSessionManager2>,
+}
+
 /// WASAPI implementation of `AudioBackend`. Must be created and used on one thread.
+///
+/// The device list, defaults, names and per-device COM objects are cached and rebuilt only when
+/// Windows notifies a change (or every `FULL_REFRESH_POLLS`). Volumes, mutes and sessions are read
+/// on every poll, so external changes still show up within one poll.
 pub struct WasapiBackend {
+    watch: DeviceWatch,
     enumerator: IMMDeviceEnumerator,
-    endpoints: HashMap<String, IMMDevice>,
+    endpoints: Vec<Endpoint>,
+    defaults: [Option<String>; 4],
+    polls_since_full: u32,
     sessions: HashMap<String, SessionHandle>,
     boosts: HashMap<String, Option<IAudioVolumeLevel>>,
     procs: HashMap<u32, ProcLookup>,
@@ -55,9 +81,13 @@ impl WasapiBackend {
                 None
             }
         };
+        let enumerator = create_enumerator()?;
         Ok(Self {
-            enumerator: create_enumerator()?,
-            endpoints: HashMap::new(),
+            watch: DeviceWatch::register(&enumerator)?,
+            enumerator,
+            endpoints: Vec::new(),
+            defaults: Default::default(),
+            polls_since_full: 0,
             sessions: HashMap::new(),
             boosts: HashMap::new(),
             procs: HashMap::new(),
@@ -69,8 +99,19 @@ impl WasapiBackend {
         })
     }
 
-    fn endpoint(&self, id: &str) -> Result<&IMMDevice> {
-        self.endpoints.get(id).ok_or_else(|| AudioError::NotFound("That device is no longer connected".into()))
+    fn endpoint(&self, id: &str) -> Result<&Endpoint> {
+        self.endpoints
+            .iter()
+            .find(|e| e.id == id)
+            .ok_or_else(|| AudioError::NotFound("That device is no longer connected".into()))
+    }
+
+    fn endpoint_volume(&self, id: &str) -> Result<IAudioEndpointVolume> {
+        let e = self.endpoint(id)?;
+        match &e.volume {
+            Some(v) => Ok(v.clone()),
+            None => endpoint_volume(&e.device),
+        }
     }
 
     fn proc(&mut self, pid: u32) -> ProcLookup {
@@ -88,7 +129,7 @@ impl WasapiBackend {
         if let Some(cached) = self.boosts.get(id) {
             return Ok(cached.clone());
         }
-        let dev = self.endpoint(id)?.clone();
+        let dev = self.endpoint(id)?.device.clone();
         let level = boost::find(&dev).unwrap_or_else(|e| {
             tracing::debug!("boost lookup failed for {id}: {e}");
             None
@@ -98,83 +139,109 @@ impl WasapiBackend {
     }
 
     fn canonical_device(&self, id: &str) -> Option<String> {
-        self.endpoints.keys().find(|k| k.eq_ignore_ascii_case(id)).cloned()
+        self.endpoints.iter().find(|e| e.id.eq_ignore_ascii_case(id)).map(|e| e.id.clone())
     }
 
-    fn snapshot_inner(&mut self) -> Result<Snapshot> {
+    /// Re-reads defaults, the endpoint list, names and per-device COM objects.
+    fn refresh_topology(&mut self) -> Result<()> {
         let e = &self.enumerator;
-        let defaults = [
+        self.defaults = [
             default_id(e, eRender, eConsole),
             default_id(e, eRender, eCommunications),
             default_id(e, eCapture, eConsole),
             default_id(e, eCapture, eCommunications),
         ];
-
-        // Pass 1: enumerate endpoints.
-        let mut found: Vec<(String, IMMDevice, Flow, DeviceState)> = Vec::new();
+        let mut endpoints = Vec::new();
         for (flow, edf) in [(Flow::Render, eRender), (Flow::Capture, eCapture)] {
             unsafe {
                 let coll = self.enumerator.EnumAudioEndpoints(edf, DEVICE_STATE(DEVICE_STATE_ACTIVE.0 | DEVICE_STATE_UNPLUGGED.0))?;
                 for i in 0..coll.GetCount()? {
-                    let dev = coll.Item(i)?;
-                    let id = device_id(&dev)?;
-                    let state =
-                        if dev.GetState()? == DEVICE_STATE_ACTIVE { DeviceState::Active } else { DeviceState::Unplugged };
-                    found.push((id, dev, flow, state));
+                    let device = coll.Item(i)?;
+                    let id = device_id(&device)?;
+                    let active = device.GetState()? == DEVICE_STATE_ACTIVE;
+                    endpoints.push(Endpoint {
+                        name: friendly_name(&device).unwrap_or_else(|_| "Unknown device".into()),
+                        volume: if active { endpoint_volume(&device).ok() } else { None },
+                        sessions: if active && flow == Flow::Render {
+                            device.Activate::<IAudioSessionManager2>(CLSCTX_ALL, None).ok()
+                        } else {
+                            None
+                        },
+                        state: if active { DeviceState::Active } else { DeviceState::Unplugged },
+                        id,
+                        device,
+                        flow,
+                    });
                 }
             }
         }
-        self.endpoints = found.iter().map(|(id, dev, _, _)| (id.clone(), dev.clone())).collect();
-        let active_capture: HashSet<String> = found
+        let active_capture: HashSet<&str> = endpoints
             .iter()
-            .filter(|(_, _, f, s)| *f == Flow::Capture && *s == DeviceState::Active)
-            .map(|(id, ..)| id.clone())
+            .filter(|e| e.flow == Flow::Capture && e.state == DeviceState::Active)
+            .map(|e| e.id.as_str())
             .collect();
-        self.boosts.retain(|id, _| active_capture.contains(id));
+        self.boosts.retain(|id, _| active_capture.contains(id.as_str()));
+        self.master_meter = self.defaults[0]
+            .as_ref()
+            .and_then(|id| endpoints.iter().find(|e| &e.id == id))
+            .and_then(|e| unsafe { e.device.Activate::<IAudioMeterInformation>(CLSCTX_ALL, None) }.ok());
+        self.endpoints = endpoints;
+        self.polls_since_full = 0;
+        Ok(())
+    }
 
-        // Pass 2: device properties.
-        let mut devices = Vec::with_capacity(found.len());
-        for (id, dev, flow, state) in &found {
-            let (volume, muted) = if *state == DeviceState::Active {
-                endpoint_volume(dev)
-                    .and_then(|v| unsafe { Ok((v.GetMasterVolumeLevelScalar()?, v.GetMute()?.as_bool())) })
-                    .unwrap_or((0.0, false))
-            } else {
-                (0.0, false)
+    fn snapshot_inner(&mut self) -> Result<Snapshot> {
+        if self.watch.take_dirty() || self.polls_since_full >= FULL_REFRESH_POLLS || self.endpoints.is_empty() {
+            self.refresh_topology()?;
+        } else {
+            self.polls_since_full += 1;
+        }
+
+        // Devices: cached identity, live volume/mute/boost.
+        let mut devices = Vec::with_capacity(self.endpoints.len());
+        for i in 0..self.endpoints.len() {
+            let (volume, muted) = match &self.endpoints[i].volume {
+                Some(v) => match unsafe { (v.GetMasterVolumeLevelScalar(), v.GetMute()) } {
+                    (Ok(level), Ok(mute)) => (level, mute.as_bool()),
+                    _ => {
+                        // The cached object went stale; rebuild the topology next poll.
+                        self.watch.mark_dirty();
+                        (0.0, false)
+                    }
+                },
+                None => (0.0, false),
             };
-            let boost = if active_capture.contains(id) {
-                self.boost_level(id).ok().flatten().and_then(|l| boost::read(&l).ok())
+            let ep = &self.endpoints[i];
+            let (id, flow, state, name) = (ep.id.clone(), ep.flow, ep.state, ep.name.clone());
+            let boost = if flow == Flow::Capture && state == DeviceState::Active {
+                self.boost_level(&id).ok().flatten().and_then(|l| boost::read(&l).ok())
             } else {
                 None
             };
             let (dc, dm) = match flow {
-                Flow::Render => (&defaults[0], &defaults[1]),
-                Flow::Capture => (&defaults[2], &defaults[3]),
+                Flow::Render => (&self.defaults[0], &self.defaults[1]),
+                Flow::Capture => (&self.defaults[2], &self.defaults[3]),
             };
             devices.push(RawDevice {
-                id: id.clone(),
-                name: friendly_name(dev).unwrap_or_else(|_| "Unknown device".into()),
-                flow: *flow,
-                state: *state,
                 default_console: dc.as_deref() == Some(id.as_str()),
                 default_comms: dm.as_deref() == Some(id.as_str()),
+                id,
+                name,
+                flow,
+                state,
                 volume,
                 muted,
                 boost,
             });
         }
 
-        // Pass 3: sessions on every active output.
+        // Sessions on every active output.
         self.sessions.clear();
         let mut sessions = Vec::new();
         let mut live_pids = HashSet::new();
-        let outputs: Vec<(String, IMMDevice)> = found
-            .iter()
-            .filter(|(_, _, f, s)| *f == Flow::Render && *s == DeviceState::Active)
-            .map(|(id, dev, ..)| (id.clone(), dev.clone()))
-            .collect();
-        for (dev_id, dev) in outputs {
-            let Ok(manager) = (unsafe { dev.Activate::<IAudioSessionManager2>(CLSCTX_ALL, None) }) else { continue };
+        let managers: Vec<(String, IAudioSessionManager2)> =
+            self.endpoints.iter().filter_map(|e| Some((e.id.clone(), e.sessions.clone()?))).collect();
+        for (dev_id, manager) in managers {
             unsafe {
                 let list = manager.GetSessionEnumerator()?;
                 for i in 0..list.GetCount()? {
@@ -232,11 +299,6 @@ impl WasapiBackend {
         }
         self.procs.retain(|pid, _| live_pids.contains(pid));
 
-        self.master_meter = defaults[0]
-            .as_ref()
-            .and_then(|id| self.endpoints.get(id))
-            .and_then(|d| unsafe { d.Activate::<IAudioMeterInformation>(CLSCTX_ALL, None) }.ok());
-
         Ok(Snapshot { devices, sessions })
     }
 }
@@ -249,6 +311,8 @@ impl AudioBackend for WasapiBackend {
                 // Audio-service restart / sleep-resume invalidates the enumerator: rebuild once.
                 tracing::warn!("snapshot failed ({e}); recreating device enumerator");
                 self.enumerator = create_enumerator()?;
+                self.watch = DeviceWatch::register(&self.enumerator)?;
+                self.endpoints.clear();
                 self.boosts.clear();
                 self.mic_meter = None;
                 self.snapshot_inner()
@@ -269,13 +333,13 @@ impl AudioBackend for WasapiBackend {
     }
 
     fn set_device_volume(&mut self, id: &str, volume: f32) -> Result<()> {
-        let v = endpoint_volume(self.endpoint(id)?)?;
+        let v = self.endpoint_volume(id)?;
         unsafe { v.SetMasterVolumeLevelScalar(volume, std::ptr::null())? };
         Ok(())
     }
 
     fn set_device_mute(&mut self, id: &str, muted: bool) -> Result<()> {
-        let v = endpoint_volume(self.endpoint(id)?)?;
+        let v = self.endpoint_volume(id)?;
         unsafe { v.SetMute(muted, std::ptr::null())? };
         Ok(())
     }
@@ -289,6 +353,8 @@ impl AudioBackend for WasapiBackend {
         for r in roles {
             policy::set_default_endpoint(id, r)?;
         }
+        // Windows' notification is asynchronous; re-read defaults on the refresh that follows.
+        self.watch.mark_dirty();
         Ok(())
     }
 
@@ -323,7 +389,7 @@ impl AudioBackend for WasapiBackend {
                 let failed_before = self.mic_meter_failed.as_deref() == Some(id);
                 if !current && !failed_before {
                     self.mic_meter = None;
-                    match self.endpoint(id).and_then(|d| MicMeter::open(d, id)) {
+                    match self.endpoint(id).and_then(|e| MicMeter::open(&e.device, id)) {
                         Ok(m) => {
                             self.mic_meter = Some(m);
                             self.mic_meter_failed = None;
