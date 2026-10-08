@@ -1,11 +1,18 @@
 use std::{collections::HashMap, sync::Mutex};
 
 use tauri::{AppHandle, Manager, State};
+use tauri_plugin_autostart::ManagerExt;
 
-use super::{hotkeys, sink::Notices, wnd};
+use super::{
+    hotkeys,
+    sink::{push_notice, Notices},
+    wnd,
+};
 use crate::{
     error::{AudioError, Result},
+    headset::{model::Connection, part::HeadsetPart, HeadsetHandle},
     model::{Command, MicConfig, UiState},
+    profile::PartChoice,
     worker::WorkerHandle,
 };
 
@@ -73,4 +80,63 @@ const VB_CABLE_URL: &str = "https://vb-audio.com/Cable/";
 #[tauri::command]
 pub fn open_vb_cable() {
     crate::win::open_url(VB_CABLE_URL);
+}
+
+async fn headset_part(headset: &HeadsetHandle) -> Option<HeadsetPart> {
+    headset.state().await.ok().and_then(|s| HeadsetPart::from_state(&s))
+}
+
+#[tauri::command]
+pub async fn save_profile(
+    worker: State<'_, WorkerHandle>,
+    headset: State<'_, HeadsetHandle>,
+    name: String,
+    parts: PartChoice,
+) -> Result<()> {
+    let snapshot = if parts.headphones { headset_part(&headset).await } else { None };
+    worker.command(Command::SaveProfile { name, parts, headset: snapshot }).await
+}
+
+#[tauri::command]
+pub async fn update_profile(worker: State<'_, WorkerHandle>, headset: State<'_, HeadsetHandle>, id: String) -> Result<()> {
+    let snapshot = headset_part(&headset).await;
+    worker.command(Command::UpdateProfile { id, headset: snapshot }).await
+}
+
+/// Applies the audio parts on the audio worker, then the headphone part through the headset manager.
+#[tauri::command]
+pub async fn apply_profile(
+    app: AppHandle,
+    worker: State<'_, WorkerHandle>,
+    headset: State<'_, HeadsetHandle>,
+    id: String,
+) -> Result<()> {
+    let part = worker.state().await?.profiles.into_iter().find(|p| p.id == id).and_then(|p| p.parts.headphones);
+    worker.command(Command::ApplyProfile { id }).await?;
+    if let Some(part) = part {
+        let connected = headset.state().await.is_ok_and(|s| s.connection == Connection::Connected);
+        if !connected {
+            push_notice(&app, AudioError::Unavailable("The Space One isn't connected, so its profile settings weren't applied".into()));
+            return Ok(());
+        }
+        for cmd in part.commands() {
+            if let Err(e) = headset.command(cmd).await {
+                push_notice(&app, e);
+                break;
+            }
+        }
+    }
+    Ok(())
+}
+
+#[tauri::command]
+pub fn get_autostart(app: AppHandle) -> Result<bool> {
+    app.autolaunch().is_enabled().map_err(|e| AudioError::Os(e.to_string()))
+}
+
+#[tauri::command]
+pub fn set_autostart(app: AppHandle, enabled: bool) -> Result<()> {
+    let launcher = app.autolaunch();
+    let result = if enabled { launcher.enable() } else { launcher.disable() };
+    result.map_err(|e| AudioError::Os(e.to_string()))
 }

@@ -13,11 +13,14 @@ pub fn run() {
     let _log_guard = logging::init(&paths::logs_dir());
     let settings_path = paths::settings_path();
     let initial = Settings::load(&settings_path);
+    // Set by the Start with Windows entry: stay in the tray whatever "Start in the tray" says.
+    let launched_minimized = std::env::args().any(|a| a == "--minimized");
     tracing::info!("Resonance starting");
 
     tauri::Builder::default()
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| wnd::show_main(app)))
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
+        .plugin(tauri_plugin_autostart::init(tauri_plugin_autostart::MacosLauncher::LaunchAgent, Some(vec!["--minimized"])))
         .manage(commands::IconCache::default())
         .manage(sink::Notices::default())
         .setup(move |app| {
@@ -48,7 +51,7 @@ pub fn run() {
                 tracing::warn!("{e}");
                 sink::push_notice(&handle, AudioError::Invalid(e));
             }
-            if !initial.ui.start_minimized {
+            if !initial.ui.start_minimized && !launched_minimized {
                 wnd::show_main(&handle);
             }
             Ok(())
@@ -64,6 +67,11 @@ pub fn run() {
             commands::headset_command,
             commands::get_headset,
             commands::open_vb_cable,
+            commands::save_profile,
+            commands::update_profile,
+            commands::apply_profile,
+            commands::get_autostart,
+            commands::set_autostart,
         ])
         .build(tauri::generate_context!())
         .expect("error while building Resonance")
