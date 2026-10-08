@@ -1,4 +1,5 @@
 mod commands;
+mod control;
 mod hotkeys;
 mod logging;
 mod sink;
@@ -23,6 +24,7 @@ pub fn run() {
         .manage(commands::IconCache::default())
         .manage(sink::Notices::default())
         .manage(wnd::VisibleWindows::default())
+        .manage(control::MicStatus::default())
         .setup(move |app| {
             let handle = app.handle().clone();
             let worker = worker::spawn(
@@ -31,7 +33,15 @@ pub fn run() {
                 settings_path.clone(),
                 sink::TauriSink { app: handle.clone() },
             );
+            let commands = worker.clone();
             app.manage(worker);
+            // Lets companion apps (the Stream Deck plugin) show and toggle the mic's mute state.
+            let mic_status = app.state::<control::MicStatus>().subscribe();
+            tauri::async_runtime::spawn(async move {
+                if let Err(e) = control::serve(control::PIPE_NAME, mic_status, move |cmd| commands.send(cmd)).await {
+                    tracing::warn!("companion control channel unavailable: {e}");
+                }
+            });
             let (headset, inbox) = crate::headset::HeadsetHandle::channel();
             app.manage(headset);
             let headset_sink = sink::HeadsetEvents { app: handle.clone() };

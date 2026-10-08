@@ -2,7 +2,7 @@ use std::sync::Mutex;
 
 use tauri::{AppHandle, Emitter, Manager};
 
-use super::{tray, wnd::VisibleWindows};
+use super::{control::MicStatus, tray, wnd::VisibleWindows};
 use crate::{
     error::AudioError,
     model::{MeterFrame, UiState},
@@ -37,6 +37,7 @@ impl EventSink for TauriSink {
     }
 
     fn mic_muted(&self, muted: bool) {
+        self.app.state::<MicStatus>().set(muted);
         let app = self.app.clone();
         let _ = self.app.run_on_main_thread(move || tray::set_mic_muted(&app, muted));
         let _ = self.app.emit("mic-muted", muted);

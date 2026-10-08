@@ -1,0 +1,16 @@
+[package]
+name = "resonance-streamdeck"
+version = "0.1.0"
+edition = "2021"
+description = "Stream Deck plugin for Resonance: a mic mute key that shows whether the mic is muted"
+license = "GPL-3.0-only"
+
+[dependencies]
+tungstenite = "0.30"
+serde_json = "1"
+base64 = "0.23"
+
+[profile.release]
+opt-level = "s"
+lto = true
+strip = true

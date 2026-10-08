@@ -66,6 +66,13 @@ interface, and it stays out of the way: in the tray it uses about **1 % of one C
 
 <br clear="right">
 
+### 🎛️ Stream Deck
+- A **Mic Mute** key for Elgato Stream Deck that shows the real state: green when you're live, red when muted,
+  grey when Resonance isn't running. It stays in sync however you mute (keyboard shortcut, tray or profile).
+- Install it with `powershell -File streamdeck\install.ps1` (needs Rust), then drag **Resonance → Mic Mute**
+  onto a key. Companion apps talk to Resonance over the local pipe `\\.\pipe\resonance`
+  ([protocol](src-tauri/src/app/control.rs)).
+
 ## Performance
 
 Measured on the same PC with the same apps open, as a percentage of one CPU core:
@@ -131,6 +138,7 @@ src-tauri/src/
   engine/             real-time audio: DSP chain, call bus, ducker, resampling and drift correction
   win/                Windows APIs: WASAPI sessions and endpoints, process loopback, start-up shortcut
   headset/            Soundcore Space One over Bluetooth (via OpenSCQ30)
+streamdeck/           Stream Deck plugin (Rust): the Mic Mute key
 docs/superpowers/     design specs and implementation plans for each phase
 ```
 

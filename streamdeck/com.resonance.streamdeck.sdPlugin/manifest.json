@@ -1,0 +1,31 @@
+{
+  "$schema": "https://schemas.elgato.com/streamdeck/plugins/manifest.json",
+  "Name": "Resonance",
+  "Version": "0.1.0.0",
+  "Author": "Resonance",
+  "Description": "Mute and unmute your microphone in Resonance, and see at a glance whether it is muted.",
+  "URL": "https://github.com/QuantumForce69/Resonance",
+  "UUID": "com.resonance.streamdeck",
+  "Icon": "imgs/plugin",
+  "Category": "Resonance",
+  "CategoryIcon": "imgs/category",
+  "CodePathWin": "resonance-streamdeck.exe",
+  "SDKVersion": 2,
+  "Software": { "MinimumVersion": "6.4" },
+  "OS": [{ "Platform": "windows", "MinimumVersion": "10" }],
+  "Actions": [
+    {
+      "UUID": "com.resonance.streamdeck.mic-mute",
+      "Name": "Mic Mute",
+      "Icon": "imgs/action",
+      "Tooltip": "Mutes or unmutes your mic in Resonance. Green: live. Red: muted. Grey: Resonance isn't running.",
+      "Controllers": ["Keypad"],
+      "DisableAutomaticStates": true,
+      "SupportedInMultiActions": true,
+      "States": [
+        { "Image": "imgs/mic-live", "Name": "Live", "ShowTitle": false },
+        { "Image": "imgs/mic-muted", "Name": "Muted", "ShowTitle": false }
+      ]
+    }
+  ]
+}

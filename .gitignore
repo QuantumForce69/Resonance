@@ -5,3 +5,5 @@ src-tauri/gen/
 *.log
 src-tauri/target-bench/
 src-tauri/target-*/
+streamdeck/target/
+streamdeck/com.resonance.streamdeck.sdPlugin/*.exe
