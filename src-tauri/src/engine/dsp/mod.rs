@@ -1,5 +1,7 @@
 //! Allocation-free processing of 48 kHz mono f32 audio.
+pub mod chain;
 pub mod compressor;
+pub mod denoise;
 pub mod gate;
 pub mod limiter;
 
