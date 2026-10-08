@@ -10,6 +10,7 @@ use tokio::sync::oneshot;
 use crate::{
     app_state::AppCore,
     backend::AudioBackend,
+    engine::AudioEngine,
     error::{AudioError, Result},
     model::{Command, MeterFrame, UiState},
     settings::Settings,
@@ -31,7 +32,7 @@ enum Msg {
     Command(Command, Option<oneshot::Sender<Result<()>>>),
     GetState(oneshot::Sender<UiState>),
     SetMetering(bool),
-    Shutdown,
+    Shutdown(Option<mpsc::Sender<()>>),
 }
 
 #[derive(Clone)]
@@ -73,11 +74,20 @@ impl WorkerHandle {
     }
 
     pub fn shutdown(&self) {
-        let _ = self.tx.send(Msg::Shutdown);
+        let _ = self.tx.send(Msg::Shutdown(None));
+    }
+
+    /// Asks the worker to stop the engine, give Windows its default mics back and save settings,
+    /// waiting up to `timeout` for it to finish. Returns at once if the worker has already stopped.
+    pub fn shutdown_and_wait(&self, timeout: Duration) {
+        let (tx, rx) = mpsc::channel();
+        if self.tx.send(Msg::Shutdown(Some(tx))).is_ok() {
+            let _ = rx.recv_timeout(timeout);
+        }
     }
 }
 
-pub fn spawn<F, B, S>(make_backend: F, settings_path: PathBuf, sink: S) -> WorkerHandle
+pub fn spawn<F, B, S>(make_backend: F, engine: Box<dyn AudioEngine>, settings_path: PathBuf, sink: S) -> WorkerHandle
 where
     F: FnOnce() -> Result<B> + Send + 'static,
     B: AudioBackend + 'static,
@@ -96,6 +106,7 @@ where
                 }
             };
             let mut core = AppCore::new(backend, Settings::load(&settings_path));
+            core.set_engine(engine);
             run_loop(&mut core, &rx, &settings_path, &sink);
         })
         .expect("failed to spawn audio worker thread");
@@ -106,6 +117,19 @@ fn save(core: &AppCore<impl AudioBackend>, path: &Path) {
     if let Err(e) = core.settings().save(path) {
         tracing::error!("couldn't save settings: {e}");
     }
+}
+
+/// Stops the engine, gives Windows its default mics back and saves anything unsaved.
+fn stop<B: AudioBackend>(core: &mut AppCore<B>, path: &Path, unsaved: bool) {
+    // One last read so changes made since the previous refresh are remembered.
+    if let Err(e) = core.refresh() {
+        tracing::warn!("final refresh failed: {e}");
+    }
+    core.shutdown();
+    if core.take_settings_dirty() || unsaved {
+        save(core, path);
+    }
+    core.stop_metering();
 }
 
 fn run_loop<B: AudioBackend>(core: &mut AppCore<B>, rx: &mpsc::Receiver<Msg>, path: &Path, sink: &impl EventSink) {
@@ -153,11 +177,15 @@ fn run_loop<B: AudioBackend>(core: &mut AppCore<B>, rx: &mpsc::Receiver<Msg>, pa
                 metering = on;
                 next_meter = Instant::now();
             }
-            Ok(Msg::Shutdown) | Err(RecvTimeoutError::Disconnected) => {
-                if dirty_since.is_some() || core.take_settings_dirty() {
-                    save(core, path);
+            Ok(Msg::Shutdown(done)) => {
+                stop(core, path, dirty_since.is_some());
+                if let Some(done) = done {
+                    let _ = done.send(());
                 }
-                core.stop_metering();
+                return;
+            }
+            Err(RecvTimeoutError::Disconnected) => {
+                stop(core, path, dirty_since.is_some());
                 return;
             }
             Err(RecvTimeoutError::Timeout) => {}
@@ -185,6 +213,9 @@ fn run_loop<B: AudioBackend>(core: &mut AppCore<B>, rx: &mpsc::Receiver<Msg>, pa
                 last_mic = mic;
             }
         }
+        for notice in core.take_notices() {
+            sink.notice(&notice);
+        }
         if core.take_settings_dirty() {
             dirty_since = Some(now);
         }
@@ -200,7 +231,7 @@ fn run_loop<B: AudioBackend>(core: &mut AppCore<B>, rx: &mpsc::Receiver<Msg>, pa
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{fake::FakeBackend, model::Flow};
+    use crate::{engine::NullEngine, fake::FakeBackend, model::Flow};
     use std::sync::mpsc;
 
     struct TestSink(mpsc::Sender<String>);
@@ -248,7 +279,7 @@ mod tests {
     fn emits_initial_state_and_mic_status() {
         let dir = tempfile::tempdir().unwrap();
         let (tx, rx) = mpsc::channel();
-        let h = spawn(|| Ok(fake()), dir.path().join("s.json"), TestSink(tx));
+        let h = spawn(|| Ok(fake()), Box::new(NullEngine), dir.path().join("s.json"), TestSink(tx));
         assert_eq!(wait_for(&rx, "state"), "state apps=1");
         assert_eq!(wait_for(&rx, "mic"), "mic false");
         h.shutdown();
@@ -259,7 +290,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("s.json");
         let (tx, rx) = mpsc::channel();
-        let h = spawn(|| Ok(fake()), path.clone(), TestSink(tx));
+        let h = spawn(|| Ok(fake()), Box::new(NullEngine), path.clone(), TestSink(tx));
         wait_for(&rx, "state");
         h.command_blocking(Command::SetAppVolume { key: "spotify.exe".into(), volume: 0.25 }).unwrap();
         let err = h.command_blocking(Command::SetAppMute { key: "nope".into(), muted: true }).unwrap_err();
@@ -276,7 +307,7 @@ mod tests {
     fn meters_flow_only_while_metering_is_on() {
         let dir = tempfile::tempdir().unwrap();
         let (tx, rx) = mpsc::channel();
-        let h = spawn(|| Ok(fake()), dir.path().join("s.json"), TestSink(tx));
+        let h = spawn(|| Ok(fake()), Box::new(NullEngine), dir.path().join("s.json"), TestSink(tx));
         wait_for(&rx, "state");
         std::thread::sleep(Duration::from_millis(200));
         assert!(rx.try_iter().all(|m| !m.starts_with("meters")));
@@ -296,10 +327,24 @@ mod tests {
         let (tx, rx) = mpsc::channel();
         let h = spawn::<_, FakeBackend, _>(
             || Err(AudioError::Os("no audio".into())),
+            Box::new(NullEngine),
             dir.path().join("s.json"),
             TestSink(tx),
         );
         assert_eq!(wait_for(&rx, "notice"), "notice no audio");
         assert_eq!(h.command_blocking(Command::ToggleMicMute).unwrap_err().code(), "unavailable");
+    }
+
+    #[test]
+    fn shutdown_and_wait_saves_before_returning() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("s.json");
+        let (tx, rx) = mpsc::channel();
+        let h = spawn(|| Ok(fake()), Box::new(NullEngine), path.clone(), TestSink(tx));
+        wait_for(&rx, "state");
+        h.command_blocking(Command::SetAppVolume { key: "spotify.exe".into(), volume: 0.3 }).unwrap();
+        h.shutdown_and_wait(Duration::from_secs(3));
+        assert_eq!(Settings::load(&path).apps["spotify.exe"].volume, 0.3);
+        h.shutdown_and_wait(Duration::from_secs(3));
     }
 }

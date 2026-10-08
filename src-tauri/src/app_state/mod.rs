@@ -1,13 +1,18 @@
 mod group;
 #[cfg(test)]
 mod tests;
+mod processing;
+#[cfg(test)]
+mod processing_tests;
 
 pub use group::{app_key, group_sessions, SYSTEM_KEY};
+pub use processing::{find_cable, Cable, RETRY_REFRESHES};
 
 use std::collections::{HashMap, HashSet};
 
 use crate::{
     backend::AudioBackend,
+    engine::{AudioEngine, NullEngine},
     error::{AudioError, Result},
     model::*,
     settings::{AppPrefs, Settings},
@@ -20,6 +25,9 @@ pub struct AppCore<B: AudioBackend> {
     state: UiState,
     seen_sessions: HashSet<String>,
     settings_dirty: bool,
+    engine: Box<dyn AudioEngine>,
+    engine_state: processing::ProcState,
+    notices: Vec<AudioError>,
 }
 
 fn clamp01(v: f32) -> Result<f32> {
@@ -38,7 +46,18 @@ impl<B: AudioBackend> AppCore<B> {
             ui: settings.ui.clone(),
             ..Default::default()
         };
-        Self { backend, settings, state, seen_sessions: HashSet::new(), settings_dirty: false }
+let mut core = Self {
+            backend,
+            settings,
+            state,
+            seen_sessions: HashSet::new(),
+            settings_dirty: false,
+            engine: Box::new(NullEngine),
+            engine_state: Default::default(),
+            notices: Vec::new(),
+        };
+        core.state.processing = core.processing_view();
+        core
     }
 
     pub fn state(&self) -> &UiState {
@@ -53,23 +72,36 @@ impl<B: AudioBackend> AppCore<B> {
         std::mem::take(&mut self.settings_dirty)
     }
 
+    /// Problems to show the user that didn't come from a command (e.g. a failed default-mic switch).
+    pub fn take_notices(&mut self) -> Vec<AudioError> {
+        std::mem::take(&mut self.notices)
+    }
+
     #[cfg(test)]
     pub fn backend_mut(&mut self) -> &mut B {
         &mut self.backend
     }
 
-    /// Re-reads the OS, restores saved prefs onto new sessions, remembers current values.
+    /// Re-reads the OS, restores saved prefs onto new sessions, remembers current values, and keeps the
+    /// processing engine and default mics in line with the settings.
     pub fn refresh(&mut self) -> Result<bool> {
+        let next = self.read_state()?;
+        let previous = std::mem::replace(&mut self.state, next);
+        if self.reconcile_processing() {
+            self.state = self.read_state()?;
+        }
+        self.state.processing = self.processing_view();
+        Ok(self.state != previous)
+    }
+
+    fn read_state(&mut self) -> Result<UiState> {
         let mut snap = self.backend.snapshot()?;
         if self.restore_new_sessions(&snap.sessions) {
             snap = self.backend.snapshot()?;
         }
         let apps = group_sessions(&snap.sessions);
         self.remember(&apps);
-        let next = self.build_state(snap.devices, apps);
-        let changed = next != self.state;
-        self.state = next;
-        Ok(changed)
+        Ok(self.build_state(snap.devices, apps))
     }
 
     fn restore_new_sessions(&mut self, sessions: &[RawSession]) -> bool {
@@ -134,6 +166,7 @@ impl<B: AudioBackend> AppCore<B> {
             routing_available: self.backend.routing_available(),
             mic: self.settings.mic.clone(),
             ui: self.settings.ui.clone(),
+            processing: self.state.processing.clone(),
         }
     }
 
@@ -283,6 +316,20 @@ impl<B: AudioBackend> AppCore<B> {
                 self.settings.apps.clear();
                 self.settings_dirty = true;
             }
+            Command::SetProcessing { processing } => {
+                let mut p = processing;
+                p.dsp = p.dsp.clamped();
+                p.monitor_level = clamp01(p.monitor_level)?;
+                self.settings.processing = p;
+                self.settings_dirty = true;
+                let params = self.engine_params();
+                self.engine.set_params(&params);
+                self.engine_state.retry_in = 0;
+                if self.reconcile_processing() {
+                    self.refresh()?;
+                }
+                self.state.processing = self.processing_view();
+            }
         }
         Ok(())
     }
@@ -299,7 +346,8 @@ impl<B: AudioBackend> AppCore<B> {
                 (a.key.clone(), p)
             })
             .collect();
-        MeterFrame { apps, master: peaks.master, mic: peaks.mic }
+let (proc_in, proc_out) = self.engine.take_peaks();
+        MeterFrame { apps, master: peaks.master, mic: peaks.mic, proc_in, proc_out }
     }
 
     pub fn stop_metering(&mut self) {

@@ -24,6 +24,7 @@ pub fn run() {
             let handle = app.handle().clone();
             let worker = worker::spawn(
                 crate::win::WasapiBackend::new,
+                Box::new(crate::engine::NullEngine),
                 settings_path.clone(),
                 sink::TauriSink { app: handle.clone() },
             );

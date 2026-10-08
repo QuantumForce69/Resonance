@@ -68,8 +68,8 @@ mod tests {
 
     fn run(chain: &mut Chain, input: &[f32]) -> Vec<f32> {
         let mut out = input.to_vec();
-        for f in out.chunks_exact_mut(FRAME) {
-            chain.process(f.try_into().unwrap());
+        for f in out.as_chunks_mut::<FRAME>().0 {
+            chain.process(f);
         }
         out
     }

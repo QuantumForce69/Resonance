@@ -1,5 +1,8 @@
+use std::sync::{Arc, Mutex, MutexGuard};
+
 use crate::{
     backend::AudioBackend,
+    engine::{AudioEngine, EngineParams, Route},
     error::{AudioError, Result},
     model::*,
 };
@@ -128,5 +131,60 @@ impl AudioBackend for FakeBackend {
 
     fn stop_metering(&mut self) {
         self.calls.push("stop_metering".into());
+    }
+}
+
+#[derive(Debug, Default)]
+pub struct EngineLog {
+    pub running: Option<Route>,
+    pub params: Option<EngineParams>,
+    pub starts: usize,
+    pub stops: usize,
+    pub fail_start: Option<String>,
+    pub failure: Option<String>,
+    pub peaks: (f32, f32),
+}
+
+/// Records what the app asks of the engine; tests keep a clone to inspect and steer it.
+#[derive(Clone, Default)]
+pub struct FakeEngine(pub Arc<Mutex<EngineLog>>);
+
+impl FakeEngine {
+    pub fn log(&self) -> MutexGuard<'_, EngineLog> {
+        self.0.lock().unwrap()
+    }
+}
+
+impl AudioEngine for FakeEngine {
+    fn start(&mut self, route: &Route, params: &EngineParams) -> Result<()> {
+        let mut log = self.log();
+        if let Some(e) = log.fail_start.clone() {
+            return Err(AudioError::Os(e));
+        }
+        log.starts += 1;
+        log.running = Some(route.clone());
+        log.params = Some(*params);
+        Ok(())
+    }
+
+    fn stop(&mut self) {
+        let mut log = self.log();
+        if log.running.take().is_some() {
+            log.stops += 1;
+        }
+        log.failure = None;
+    }
+
+    fn set_params(&mut self, params: &EngineParams) {
+        self.log().params = Some(*params);
+    }
+
+    fn failure(&self) -> Option<String> {
+        let log = self.log();
+        log.running.as_ref().and(log.failure.clone())
+    }
+
+    fn take_peaks(&self) -> (f32, f32) {
+        self.log().peaks
     }
 }

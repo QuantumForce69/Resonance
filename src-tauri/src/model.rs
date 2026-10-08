@@ -2,6 +2,8 @@ use std::collections::HashMap;
 
 use serde::{Deserialize, Serialize};
 
+use crate::engine::{ProcessingSettings, ProcessingView};
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum Flow {
@@ -154,6 +156,7 @@ pub struct UiState {
     pub routing_available: bool,
     pub mic: MicConfig,
     pub ui: UiSettings,
+    pub processing: ProcessingView,
 }
 
 #[derive(Debug, Clone, PartialEq, Default, Serialize)]
@@ -163,6 +166,9 @@ pub struct MeterFrame {
     pub apps: HashMap<String, f32>,
     pub master: f32,
     pub mic: f32,
+    /// Processed-mic peaks before and after the chain.
+    pub proc_in: f32,
+    pub proc_out: f32,
 }
 
 #[derive(Debug, Clone, PartialEq, Deserialize)]
@@ -182,6 +188,7 @@ pub enum Command {
     SetMicConfig { config: MicConfig },
     SetUiSettings { ui: UiSettings },
     ResetAppMemory,
+    SetProcessing { processing: ProcessingSettings },
 }
 
 #[cfg(test)]
@@ -215,6 +222,12 @@ mod tests {
                 config: MicConfig { hotkey: Some("Ctrl+F13".into()), mode: HotkeyMode::PushToTalk }
             }
         );
+
+        let c: Command =
+            serde_json::from_str(r#"{"type":"setProcessing","processing":{"enabled":true,"monitorLevel":0.5}}"#).unwrap();
+        let Command::SetProcessing { processing } = c else { panic!("wrong command") };
+        assert!(processing.enabled);
+        assert_eq!(processing.monitor_level, 0.5);
     }
 
     #[test]
@@ -225,6 +238,7 @@ mod tests {
         assert_eq!(v["ui"]["startMinimized"], false);
         assert_eq!(v["mic"]["hotkey"], "Ctrl+Shift+M");
         assert_eq!(v["mic"]["mode"], "toggle");
+        assert_eq!(v["processing"]["status"]["state"], "off");
     }
 
     #[test]

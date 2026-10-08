@@ -47,8 +47,8 @@ mod tests {
     fn run(strength: f32, input: &[f32]) -> Vec<f32> {
         let mut d = Denoiser::new(strength);
         let mut out = input.to_vec();
-        for f in out.chunks_exact_mut(FRAME) {
-            d.process(f.try_into().unwrap());
+        for f in out.as_chunks_mut::<FRAME>().0 {
+            d.process(f);
         }
         out
     }
