@@ -74,3 +74,15 @@ Run with `npm.cmd run tauri dev` (or the installed build). Tick each item.
 - [ ] Sending Discord shows the echo warning.
 - [ ] Turn Processing off and on: sends come back. Quit and relaunch: sends are remembered.
 - [ ] Loud music never clips in a recording of CABLE Output.
+
+## Phase 4 — Profiles, Start with Windows, first-run setup
+
+- [ ] First launch after installing shows the welcome; Skip or Done closes it for good.
+- [ ] Save "Gaming" (Apps + Headphones) with the game loud and ANC on; save "Work" (Apps + Headphones) with music low and transparency on.
+- [ ] Switching from the tray flyout restores the volumes and the headphone mode; the active button is lit.
+- [ ] Save "Call" (Mic & processing): processing on, Spotify sent; switching to it turns processing on and sends Spotify.
+- [ ] A profile with only Default output leaves app volumes alone.
+- [ ] With the Space One off, switching to Gaming applies the apps and says the headphones were skipped.
+- [ ] An app that wasn't running gets its saved volume and output when it starts.
+- [ ] Update, Rename and Delete (with confirmation) work; deleting the active profile clears the highlight.
+- [ ] Start with Windows on: sign out and in → Resonance is in the tray, no window. Off: it doesn't start.

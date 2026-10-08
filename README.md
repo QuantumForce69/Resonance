@@ -8,8 +8,10 @@ A modern Windows audio control centre:
 - a processed microphone: AI noise suppression, gate, compressor and limiter on your mic, delivered to every
   app through the free [VB-Cable](https://vb-audio.com/Cable/) driver, with optional monitoring, and a call mix:
   send any app into your calls with its own level, with automatic ducking while you talk
+- profiles: save your setup (app volumes and routing, mic processing and call sends, headphone mode and EQ,
+  default output) and switch from the tray; start with Windows; a short first-run setup
 
-Stream mixes and profiles come in later phases (see `docs/superpowers/specs/`).
+Design specs and plans are in `docs/superpowers/`.
 
 ## Develop
 

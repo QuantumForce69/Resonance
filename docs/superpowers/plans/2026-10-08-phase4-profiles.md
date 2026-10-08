@@ -1904,3 +1904,14 @@ git commit -m "docs: Phase 4 checklist and README"
 ```
 
 Tell the user what was built and verified, what to try, and offer to merge to `main`.
+
+---
+
+## Execution notes (2026-10-08)
+
+- Task 1 also needed `onboarded` added to an existing `UiSettings` literal in `app_state/tests.rs`.
+- **Start-up entry follows the installed copy:** switching Start with Windows on from a development build registered
+  `targetdebugesonance.exe`. Release builds now call `autolaunch().enable()` on launch when the entry is enabled,
+  re-pointing it at themselves; debug builds never touch it.
+- Live check: welcome completed in the dev app, Profiles tab save/delete with confirmation, Settings switch shows the
+  real state.
