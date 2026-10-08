@@ -10,19 +10,19 @@ interface Props {
 
 /** Segmented ladder meter driven by the rAF meter engine (no React renders). */
 export function Meter({ source, orientation = "horizontal", className = "" }: Props) {
-  const fill = useRef<HTMLDivElement>(null);
+  const cover = useRef<HTMLDivElement>(null);
   const peak = useRef<HTMLDivElement>(null);
   const vertical = orientation === "vertical";
 
   useEffect(() => {
-    if (!fill.current || !peak.current) return;
-    return registerMeter(source, vertical, fill.current, peak.current);
+    if (!cover.current || !peak.current) return;
+    return registerMeter(source, vertical, cover.current, peak.current);
   }, [source, vertical]);
 
   return (
     <div aria-hidden className={`ladder ${vertical ? "vertical h-full w-[6px]" : "h-1 w-full"} ${className}`}>
-      <div className="ladder-off" />
-      <div ref={fill} className="ladder-fill" style={{ clipPath: vertical ? "inset(100% 0 0 0)" : "inset(0 100% 0 0)" }} />
+      <div className="ladder-fill" />
+      <div ref={cover} className="ladder-cover" />
       <div ref={peak} className="ladder-peak" />
     </div>
   );

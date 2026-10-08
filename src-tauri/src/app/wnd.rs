@@ -14,12 +14,24 @@ const MARGIN: f64 = 12.0;
 /// When the flyout last hid on focus loss: the tray click that caused it must not reopen it.
 static LAST_FLYOUT_HIDE: Mutex<Option<Instant>> = Mutex::new(None);
 
-/// Meters (and the mic capture stream) run only while some window is actually visible.
+/// Windows that are on screen right now; meter frames go only to these.
+#[derive(Default)]
+pub struct VisibleWindows(pub Mutex<Vec<&'static str>>);
+
+/// Meters (and the mic capture stream) run only while some window is actually visible, and frames are sent
+/// only to the visible ones (a hidden flyout would otherwise keep animating).
 pub fn update_metering(app: &AppHandle) {
-    let active = ["main", "flyout"]
-        .iter()
-        .filter_map(|l| app.get_webview_window(l))
-        .any(|w| w.is_visible().unwrap_or(false) && !w.is_minimized().unwrap_or(false));
+    let visible: Vec<&'static str> = ["main", "flyout"]
+        .into_iter()
+        .filter(|l| {
+            app.get_webview_window(l)
+                .is_some_and(|w| w.is_visible().unwrap_or(false) && !w.is_minimized().unwrap_or(false))
+        })
+        .collect();
+    let active = !visible.is_empty();
+    if let Ok(mut v) = app.state::<VisibleWindows>().0.lock() {
+        *v = visible;
+    }
     if let Some(worker) = app.try_state::<WorkerHandle>() {
         worker.set_metering(active);
     }

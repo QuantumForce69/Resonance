@@ -52,7 +52,8 @@ describe("paintMeter", () => {
     const m = createMeter("app:quiet.exe", false, fill, peak);
     ingestFrame({ apps: { "quiet.exe": 0.5 }, master: 0, mic: 0, procIn: 0, procOut: 0 });
     expect(paintMeter(m, 1000)).toBe(true);
-    expect(fill.style.clipPath).toMatch(/^inset\(0 /);
+
+    expect(fill.style.transform).toMatch(/^translateX\(\d/);
     // Same input, same frame result: nothing is written to the page.
     expect(paintMeter(m, 1000)).toBe(false);
   });

@@ -22,6 +22,7 @@ pub fn run() {
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .manage(commands::IconCache::default())
         .manage(sink::Notices::default())
+        .manage(wnd::VisibleWindows::default())
         .setup(move |app| {
             let handle = app.handle().clone();
             let worker = worker::spawn(

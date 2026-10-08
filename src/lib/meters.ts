@@ -23,6 +23,7 @@ const latest = new Map<string, number>();
 
 /** Sources: "master", "mic", "procIn", "procOut", "app:<key>". */
 export function ingestFrame(f: MeterFrame) {
+  wake();
   latest.set("master", f.master);
   latest.set("mic", f.mic);
   latest.set("procIn", f.procIn);
@@ -40,22 +41,23 @@ export function readLevel(source: string): number {
 export interface Meter {
   source: string;
   vertical: boolean;
-  fill: HTMLElement;
+  /** Covers the unlit part of the ladder; moved with a transform so the GPU composites it without repainting. */
+  cover: HTMLElement;
   peak: HTMLElement;
   state: MeterState;
   /** What was last written to the page, so unchanged frames cost nothing. */
   painted: string;
 }
 
-/** Meter data arrives at 30 Hz; animating faster than 60 fps (e.g. on a 240 Hz monitor) only burns CPU. */
-const FRAME_MS = 1000 / 60;
+/** Meter data arrives at 30 Hz, so painting faster than 30 fps only burns CPU and GPU. */
+const FRAME_MS = 1000 / 30;
 
 const meters = new Set<Meter>();
 let raf = 0;
 let lastFrame = -Infinity;
 
-export function createMeter(source: string, vertical: boolean, fill: HTMLElement, peak: HTMLElement): Meter {
-  return { source, vertical, fill, peak, state: { level: 0, peak: 0, peakAt: 0 }, painted: "" };
+export function createMeter(source: string, vertical: boolean, cover: HTMLElement, peak: HTMLElement): Meter {
+  return { source, vertical, cover, peak, state: { level: 0, peak: 0, peakAt: 0 }, painted: "" };
 }
 
 /** Advances one meter and writes to the page only if what it shows changed (0.1% steps). */
@@ -68,28 +70,41 @@ export function paintMeter(m: Meter, now: number): boolean {
   m.painted = key;
   m.peak.style.opacity = pk > 1 ? "0.8" : "0";
   if (m.vertical) {
-    m.fill.style.clipPath = `inset(${100 - lv}% 0 0 0)`;
-    m.peak.style.bottom = `${pk}%`;
+    m.cover.style.transform = `translateY(-${lv}%)`;
+    m.peak.style.transform = `translateY(-${pk}%)`;
   } else {
-    m.fill.style.clipPath = `inset(0 ${100 - lv}% 0 0)`;
-    m.peak.style.left = `calc(${pk}% - 1px)`;
+    m.cover.style.transform = `translateX(${lv}%)`;
+    m.peak.style.transform = `translateX(calc(${pk}% - 2px))`;
   }
   return true;
 }
 
+const atRest = (m: Meter) => m.state.level < 0.001 && m.state.peak < 0.001;
+
+/** Animates until every meter has come to rest; new meter data wakes it again. So hidden windows (which get
+ * no data) and silence cost nothing. */
 function tick(now: number) {
+  let resting = false;
   if (now - lastFrame >= FRAME_MS - 1) {
     lastFrame = now;
-    for (const m of meters) paintMeter(m, now);
+    resting = true;
+    for (const m of meters) {
+      paintMeter(m, now);
+      if (!atRest(m)) resting = false;
+    }
   }
-  raf = meters.size ? requestAnimationFrame(tick) : 0;
+  raf = meters.size && !resting ? requestAnimationFrame(tick) : 0;
+}
+
+function wake() {
+  if (!raf && meters.size) raf = requestAnimationFrame(tick);
 }
 
 /** Drives a meter's DOM directly (no React renders). Returns an unregister function. */
-export function registerMeter(source: string, vertical: boolean, fill: HTMLElement, peak: HTMLElement): () => void {
-  const r = createMeter(source, vertical, fill, peak);
+export function registerMeter(source: string, vertical: boolean, cover: HTMLElement, peak: HTMLElement): () => void {
+  const r = createMeter(source, vertical, cover, peak);
   meters.add(r);
-  if (!raf) raf = requestAnimationFrame(tick);
+  wake();
   return () => {
     meters.delete(r);
   };

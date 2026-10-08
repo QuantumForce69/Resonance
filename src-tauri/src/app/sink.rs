@@ -2,7 +2,7 @@ use std::sync::Mutex;
 
 use tauri::{AppHandle, Emitter, Manager};
 
-use super::tray;
+use super::{tray, wnd::VisibleWindows};
 use crate::{
     error::AudioError,
     model::{MeterFrame, UiState},
@@ -30,7 +30,10 @@ impl EventSink for TauriSink {
     }
 
     fn meters(&self, frame: &MeterFrame) {
-        let _ = self.app.emit("meters", frame);
+        let visible = self.app.state::<VisibleWindows>().0.lock().map(|v| v.clone()).unwrap_or_default();
+        for label in visible {
+            let _ = self.app.emit_to(label, "meters", frame);
+        }
     }
 
     fn mic_muted(&self, muted: bool) {

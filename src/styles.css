@@ -183,11 +183,6 @@ input {
   -webkit-mask-image: repeating-linear-gradient(to top, #000 0 3px, transparent 3px 5px);
   mask-image: repeating-linear-gradient(to top, #000 0 3px, transparent 3px 5px);
 }
-.ladder-off {
-  position: absolute;
-  inset: 0;
-  background: var(--ladder-off);
-}
 .ladder-fill {
   position: absolute;
   inset: 0;
@@ -196,20 +191,23 @@ input {
 .ladder.vertical .ladder-fill {
   background: linear-gradient(to top, #5b3df5 0%, var(--accent) 55%, var(--lilac) 84%, var(--coral) 95%);
 }
+/* The cover hides the unlit part and the peak marker is a 3 px bar; both move with transforms only, so
+   animating them re-composites on the GPU instead of repainting the masked ladder. */
+.ladder-cover {
+  position: absolute;
+  inset: 0;
+  background: var(--ladder-off);
+  will-change: transform;
+}
 .ladder-peak {
   position: absolute;
-  top: 0;
-  bottom: 0;
-  width: 3px;
-  background: var(--lilac);
+  inset: 0;
+  background: linear-gradient(to right, var(--lilac) 0 3px, transparent 3px);
   opacity: 0;
+  will-change: transform, opacity;
 }
 .ladder.vertical .ladder-peak {
-  top: auto;
-  left: 0;
-  right: 0;
-  width: auto;
-  height: 3px;
+  background: linear-gradient(to top, var(--lilac) 0 3px, transparent 3px);
 }
 
 /* ---------- Illuminated keys ---------- */
