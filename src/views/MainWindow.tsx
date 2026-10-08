@@ -5,6 +5,7 @@ import { DevicesView } from "./DevicesView";
 import { HeadphonesView } from "./HeadphonesView";
 import { MicView } from "./MicView";
 import { MixerView } from "./MixerView";
+import { ProfilesView } from "./ProfilesView";
 import { SettingsView } from "./SettingsView";
 import { Titlebar, type View } from "./Titlebar";
 
@@ -26,6 +27,8 @@ export function MainWindow() {
           <MicView state={state} />
         ) : view === "headphones" ? (
           <HeadphonesView />
+        ) : view === "profiles" ? (
+          <ProfilesView state={state} />
         ) : (
           <SettingsView state={state} />
         )}
