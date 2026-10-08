@@ -3,7 +3,7 @@ use std::collections::{HashMap, HashSet};
 use windows::core::Interface;
 use windows::Win32::Foundation::S_OK;
 use windows::Win32::Media::Audio::{
-    eCapture, eCommunications, eConsole, eMultimedia, eRender, AudioSessionStateExpired,
+    eCapture, eCommunications, eConsole, eMultimedia, eRender, AudioSessionStateActive, AudioSessionStateExpired,
     Endpoints::{IAudioEndpointVolume, IAudioEndpointVolumeCallback, IAudioMeterInformation},
     IAudioSessionControl, IAudioSessionControl2, IAudioSessionEvents, IAudioSessionNotification, IAudioSessionManager2, IAudioVolumeLevel, IMMDevice, IMMDeviceEnumerator, ISimpleAudioVolume,
     DEVICE_STATE, DEVICE_STATE_ACTIVE, DEVICE_STATE_UNPLUGGED,
@@ -38,6 +38,9 @@ struct SessionHandle {
     /// Registered for change notifications while this handle lives.
     control: IAudioSessionControl,
     events: IAudioSessionEvents,
+    /// Playing right now (as of the last read; a state change triggers a re-read). Silent sessions' peaks
+    /// are known to be zero, so meters skip asking Windows for them.
+    active: bool,
 }
 
 impl Drop for SessionHandle {
@@ -301,7 +304,8 @@ impl WasapiBackend {
                 let list = manager.GetSessionEnumerator()?;
                 for i in 0..list.GetCount()? {
                     let Ok(ctl) = list.GetSession(i) else { continue };
-                    if ctl.GetState().map(|s| s == AudioSessionStateExpired).unwrap_or(true) {
+                    let Ok(state) = ctl.GetState() else { continue };
+                    if state == AudioSessionStateExpired {
                         continue;
                     }
                     let Ok(ctl2) = ctl.cast::<IAudioSessionControl2>() else { continue };
@@ -318,7 +322,7 @@ impl WasapiBackend {
                     };
                     live_pids.insert(pid);
                     let Ok(id) = ctl2.GetSessionInstanceIdentifier().map(|p| take_pwstr(p)) else { continue };
-                    let handle = match previous.remove(&id) {
+                    let mut handle = match previous.remove(&id) {
                         Some(h) => h,
                         None => {
                             let (Ok(volume), Ok(meter)) =
@@ -328,9 +332,10 @@ impl WasapiBackend {
                             };
                             let events = self.changes.session_events.clone();
                             let _ = ctl.RegisterAudioSessionNotification(&events);
-                            SessionHandle { volume, meter, control: ctl.clone(), events }
+                            SessionHandle { volume, meter, control: ctl.clone(), events, active: false }
                         }
                     };
+                    handle.active = state == AudioSessionStateActive;
                     let volume = &handle.volume;
                     let level = volume.GetMasterVolume().unwrap_or(1.0);
                     let muted = volume.GetMute().map(|m| m.as_bool()).unwrap_or(false);
@@ -452,7 +457,10 @@ impl AudioBackend for WasapiBackend {
 
     fn peaks(&mut self, mic_device_id: Option<&str>) -> Peaks {
         let sessions =
-            self.sessions.iter().map(|(id, h)| (id.clone(), unsafe { h.meter.GetPeakValue() }.unwrap_or(0.0))).collect();
+            self.sessions
+                .iter()
+                .map(|(id, h)| (id.clone(), if h.active { unsafe { h.meter.GetPeakValue() }.unwrap_or(0.0) } else { 0.0 }))
+                .collect();
         let master = self.master_meter.as_ref().and_then(|m| unsafe { m.GetPeakValue() }.ok()).unwrap_or(0.0);
         let mic = match mic_device_id {
             None => {
