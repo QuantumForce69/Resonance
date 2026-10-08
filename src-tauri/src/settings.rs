@@ -2,7 +2,10 @@ use std::{collections::BTreeMap, fs, io, path::Path};
 
 use serde::{Deserialize, Serialize};
 
-use crate::model::{MicConfig, UiSettings};
+use crate::{
+    engine::{ProcessingSettings, RestoreDefaults},
+    model::{MicConfig, UiSettings},
+};
 
 pub const SETTINGS_VERSION: u32 = 1;
 
@@ -34,6 +37,9 @@ pub struct Settings {
     pub devices: BTreeMap<String, DevicePrefs>,
     pub mic: MicConfig,
     pub ui: UiSettings,
+    pub processing: ProcessingSettings,
+    /// Default mics to restore; present while processing has them pointed at VB-Cable.
+    pub processing_restore: Option<RestoreDefaults>,
 }
 
 impl Default for Settings {
@@ -44,6 +50,8 @@ impl Default for Settings {
             devices: BTreeMap::new(),
             mic: MicConfig::default(),
             ui: UiSettings::default(),
+            processing: ProcessingSettings::default(),
+            processing_restore: None,
         }
     }
 }
@@ -103,10 +111,14 @@ mod tests {
         s.devices.insert("dev".into(), DevicePrefs { alias: Some("Desk".into()), hidden: true });
         s.mic.mode = HotkeyMode::PushToMute;
         s.ui.theme = Theme::Light;
+        s.processing.enabled = true;
+        s.processing.dsp.gate.threshold_db = -50.0;
+        s.processing_restore = Some(RestoreDefaults { console: Some("mic1".into()), comms: None });
         s.save(&path).unwrap();
         assert_eq!(Settings::load(&path), s);
         let text = std::fs::read_to_string(&path).unwrap();
         assert!(text.contains("\"startMinimized\""));
+        assert!(text.contains("\"processingRestore\""));
     }
 
     #[test]
