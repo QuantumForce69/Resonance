@@ -1,4 +1,4 @@
-import type { App, Device, UiState } from "../lib/types";
+import type { App, Device, DspParams, ProcessingView, UiState } from "../lib/types";
 
 export function makeDevice(p: Partial<Device> & { id: string }): Device {
   return {
@@ -31,6 +31,22 @@ export function makeApp(p: Partial<App> & { key: string }): App {
   };
 }
 
+export const DEFAULT_DSP: DspParams = {
+  denoise: { enabled: true, strength: 1 },
+  gate: { enabled: true, thresholdDb: -45, attackMs: 2, holdMs: 150, releaseMs: 120, rangeDb: -60 },
+  compressor: { enabled: true, amount: 0.5, custom: false, thresholdDb: -22.5, ratio: 3.75, attackMs: 5, releaseMs: 80, makeupDb: null },
+  limiter: { enabled: true, ceilingDb: -1, releaseMs: 50 },
+};
+
+export function makeProcessing(p: Partial<ProcessingView> = {}): ProcessingView {
+  return {
+    settings: { enabled: false, sourceId: null, dsp: structuredClone(DEFAULT_DSP), monitor: false, monitorLevel: 0.7 },
+    status: { state: "off" },
+    cableInstalled: true,
+    ...p,
+  };
+}
+
 export function makeState(p: Partial<UiState> = {}): UiState {
   return {
     devices: [
@@ -46,6 +62,7 @@ export function makeState(p: Partial<UiState> = {}): UiState {
     routingAvailable: true,
     mic: { hotkey: "Ctrl+Shift+M", mode: "toggle" },
     ui: { theme: "system", startMinimized: false },
+    processing: makeProcessing(),
     ...p,
   };
 }

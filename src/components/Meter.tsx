@@ -2,7 +2,7 @@ import { useEffect, useRef } from "react";
 import { registerMeter } from "../lib/meters";
 
 interface Props {
-  /** "master", "mic" or "app:<key>" */
+  /** "master", "mic", "procIn", "procOut" or "app:<key>" */
   source: string;
   orientation?: "horizontal" | "vertical";
   className?: string;

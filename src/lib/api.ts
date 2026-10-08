@@ -8,6 +8,7 @@ export const getAppIcon = (exePath: string) => invoke<string | null>("get_app_ic
 export const setMicHotkey = (config: MicConfig) => invoke<void>("set_mic_hotkey", { config });
 export const takeNotices = () => invoke<CmdError[]>("take_notices");
 export const showMain = () => invoke<void>("show_main");
+export const openVbCable = () => invoke<void>("open_vb_cable");
 
 export const onState = (cb: (s: UiState) => void): Promise<UnlistenFn> => listen<UiState>("state", (e) => cb(e.payload));
 export const onMeters = (cb: (m: MeterFrame) => void): Promise<UnlistenFn> =>

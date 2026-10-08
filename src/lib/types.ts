@@ -48,18 +48,79 @@ export interface UiSettings {
   startMinimized: boolean;
 }
 
+export interface DenoiseParams {
+  enabled: boolean;
+  strength: number;
+}
+
+export interface GateParams {
+  enabled: boolean;
+  thresholdDb: number;
+  attackMs: number;
+  holdMs: number;
+  releaseMs: number;
+  rangeDb: number;
+}
+
+export interface CompressorParams {
+  enabled: boolean;
+  amount: number;
+  custom: boolean;
+  thresholdDb: number;
+  ratio: number;
+  attackMs: number;
+  releaseMs: number;
+  makeupDb: number | null;
+}
+
+export interface LimiterParams {
+  enabled: boolean;
+  ceilingDb: number;
+  releaseMs: number;
+}
+
+export interface DspParams {
+  denoise: DenoiseParams;
+  gate: GateParams;
+  compressor: CompressorParams;
+  limiter: LimiterParams;
+}
+
+export interface ProcessingSettings {
+  enabled: boolean;
+  sourceId: string | null;
+  dsp: DspParams;
+  monitor: boolean;
+  monitorLevel: number;
+}
+
+export type EngineStatus =
+  | { state: "off" }
+  | { state: "noCable" }
+  | { state: "running" }
+  | { state: "paused"; reason: string };
+
+export interface ProcessingView {
+  settings: ProcessingSettings;
+  status: EngineStatus;
+  cableInstalled: boolean;
+}
+
 export interface UiState {
   devices: Device[];
   apps: App[];
   routingAvailable: boolean;
   mic: MicConfig;
   ui: UiSettings;
+  processing: ProcessingView;
 }
 
 export interface MeterFrame {
   apps: Record<string, number>;
   master: number;
   mic: number;
+  procIn: number;
+  procOut: number;
 }
 
 export type Command =
@@ -76,7 +137,8 @@ export type Command =
   | { type: "toggleMicMute" }
   | { type: "setMicConfig"; config: MicConfig }
   | { type: "setUiSettings"; ui: UiSettings }
-  | { type: "resetAppMemory" };
+  | { type: "resetAppMemory" }
+  | { type: "setProcessing"; processing: ProcessingSettings };
 
 export interface CmdError {
   code: "notFound" | "unavailable" | "invalid" | "os";

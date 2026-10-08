@@ -21,10 +21,12 @@ export function stepMeter(s: MeterState, target: number, now: number): MeterStat
 
 const latest = new Map<string, number>();
 
-/** Sources: "master", "mic", "app:<key>". */
+/** Sources: "master", "mic", "procIn", "procOut", "app:<key>". */
 export function ingestFrame(f: MeterFrame) {
   latest.set("master", f.master);
   latest.set("mic", f.mic);
+  latest.set("procIn", f.procIn);
+  latest.set("procOut", f.procOut);
   for (const k of latest.keys()) {
     if (k.startsWith("app:") && !(k.slice(4) in f.apps)) latest.set(k, 0);
   }
