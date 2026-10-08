@@ -2146,3 +2146,14 @@ git commit -m "docs: Phase 3b checklist and README"
 ```
 
 Tell the user what was built and verified, what to try (the checklist), and offer to merge to `main`.
+
+---
+
+## Execution notes (2026-10-08)
+
+Deviations found while building, all committed:
+
+- **Task 4 needs engine stubs:** `WasapiEngine` must implement the two new trait methods before Task 5 replaces them; temporary stubs were added.
+- **Resonance hides its own sessions** (`snapshot_without_self`): its processed-mic and monitor streams appeared as an app; sending it fed the call back into itself (the first hardware run hit the limiter ceiling) and muting it would silence calls. Test `resonance_itself_is_never_listed_or_sent`.
+- **Hardware call test** plays its tone from a helper child process (`tone_helper`), since capturing the test's own process also captured its engine output. Windows' peak meter falls gradually, so "unsent again" is judged by a steady decline. Result: unsent 0.000, sent 0.200 (the tone's exact level).
+- **UI after a live look:** the sent Call key uses the violet "live" style (coral means muted); the Call key + knob area has a fixed height (spacer on System sounds) so faders stay aligned; the "Apps in call" fader is capped at 420 px.

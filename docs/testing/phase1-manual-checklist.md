@@ -61,3 +61,16 @@ Run with `npm.cmd run tauri dev` (or the installed build). Tick each item.
 - [ ] Quit from the tray while processing: previous mics come back; relaunch: processing turns itself back on.
 - [ ] Kill Resonance in Task Manager while processing, relaunch, turn Processing off: the original mics come back.
 - [ ] Change the default mic in Windows while processing is on, then turn Processing off: your manual choice is kept.
+
+## Phase 3b — Call mix (needs Processing on)
+
+- [ ] Mixer: every app (not System sounds) has a Call key; with Processing off it's dimmed and explains why.
+- [ ] Send Spotify: the key lights, a Send knob appears; in a Discord voice test the other side hears the music and you.
+- [ ] You still hear Spotify on your own speakers/headphones, unchanged.
+- [ ] Send level and "Apps in call" both change how loud the music is in the call.
+- [ ] Ducking: the music drops while you talk and comes back about half a second after you stop; "Duck by" changes how much; turning ducking off keeps it steady.
+- [ ] Chrome with several tabs playing: heard once, not doubled.
+- [ ] Close Spotify while sent, reopen it and play: it's heard in the call again without touching anything.
+- [ ] Sending Discord shows the echo warning.
+- [ ] Turn Processing off and on: sends come back. Quit and relaunch: sends are remembered.
+- [ ] Loud music never clips in a recording of CABLE Output.

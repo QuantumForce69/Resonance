@@ -6,7 +6,8 @@ A modern Windows audio control centre:
 - microphone control with global hotkeys
 - Soundcore Space One control (noise cancelling, EQ, battery)
 - a processed microphone: AI noise suppression, gate, compressor and limiter on your mic, delivered to every
-  app through the free [VB-Cable](https://vb-audio.com/Cable/) driver, with optional monitoring
+  app through the free [VB-Cable](https://vb-audio.com/Cable/) driver, with optional monitoring, and a call mix:
+  send any app into your calls with its own level, with automatic ducking while you talk
 
 Stream mixes and profiles come in later phases (see `docs/superpowers/specs/`).
 
