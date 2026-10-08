@@ -154,8 +154,6 @@ pub struct UiState {
     pub routing_available: bool,
     pub mic: MicConfig,
     pub ui: UiSettings,
-    /// Windows accent colour as `#rrggbb`.
-    pub accent: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Default, Serialize)]

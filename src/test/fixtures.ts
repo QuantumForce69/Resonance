@@ -46,7 +46,6 @@ export function makeState(p: Partial<UiState> = {}): UiState {
     routingAvailable: true,
     mic: { hotkey: "Ctrl+Shift+M", mode: "toggle" },
     ui: { theme: "system", startMinimized: false },
-    accent: "#7c5cff",
     ...p,
   };
 }

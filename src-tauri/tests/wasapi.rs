@@ -71,11 +71,9 @@ fn routing_is_available_on_this_machine() {
 
 #[test]
 #[ignore]
-fn icons_and_accent() {
+fn extracts_app_icons() {
     let icon = resonance_lib::win::exe_icon_png_base64(r"C:\Windows\explorer.exe").expect("explorer icon");
     assert!(icon.len() > 100);
-    let accent = resonance_lib::win::accent_hex();
-    assert!(accent.starts_with('#') && accent.len() == 7, "{accent}");
 }
 
 #[test]

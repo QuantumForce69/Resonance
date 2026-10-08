@@ -1,8 +1,4 @@
-use std::{
-    path::PathBuf,
-    sync::Arc,
-    time::{SystemTime, UNIX_EPOCH},
-};
+use std::{path::PathBuf, sync::Arc};
 
 use async_trait::async_trait;
 use openscq30_lib::{storage::PairedDevice, DeviceModel, OpenSCQ30Session};
@@ -26,10 +22,8 @@ impl LibConnector {
         let session = match OpenSCQ30Session::new(db_path.clone()).await {
             Ok(s) => s,
             Err(e) => {
-                let ts = SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
-                let backup = db_path.with_file_name(format!("openscq30.bad-{ts}.sqlite"));
+                let backup = crate::paths::quarantine(&db_path);
                 tracing::warn!("headset database unusable ({e}); moved to {}", backup.display());
-                let _ = std::fs::rename(&db_path, backup);
                 OpenSCQ30Session::new(db_path).await.map_err(|e| e.to_string())?
             }
         };

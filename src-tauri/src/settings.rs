@@ -1,9 +1,4 @@
-use std::{
-    collections::BTreeMap,
-    fs, io,
-    path::Path,
-    time::{SystemTime, UNIX_EPOCH},
-};
+use std::{collections::BTreeMap, fs, io, path::Path};
 
 use serde::{Deserialize, Serialize};
 
@@ -67,10 +62,8 @@ impl Settings {
         match serde_json::from_str::<Settings>(&text) {
             Ok(s) => s,
             Err(e) => {
-                let ts = SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
-                let backup = path.with_file_name(format!("settings.bad-{ts}.json"));
+                let backup = crate::paths::quarantine(path);
                 tracing::warn!("settings file is corrupt ({e}); moved to {}", backup.display());
-                let _ = fs::rename(path, backup);
                 Settings::default()
             }
         }

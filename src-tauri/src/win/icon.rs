@@ -1,5 +1,5 @@
 use base64::{engine::general_purpose::STANDARD, Engine};
-use windows::core::PCWSTR;
+use windows::core::{HSTRING, PCWSTR};
 use windows::Win32::{
     Graphics::Gdi::{
         DeleteObject, GetDC, GetDIBits, GetObjectW, ReleaseDC, BITMAP, BITMAPINFO, BITMAPINFOHEADER, BI_RGB, DIB_RGB_COLORS,
@@ -10,12 +10,11 @@ use windows::Win32::{
     },
 };
 
-use super::util::to_wide;
 
 /// The executable's large icon as a base64 PNG, or `None` if it has none.
 pub fn exe_icon_png_base64(path: &str) -> Option<String> {
     unsafe {
-        let wide = to_wide(path);
+        let wide = HSTRING::from(path);
         let mut large = HICON::default();
         let count = ExtractIconExW(PCWSTR(wide.as_ptr()), 0, Some(&mut large), None, 1);
         if count == 0 || large.is_invalid() {

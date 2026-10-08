@@ -10,7 +10,7 @@ use tokio::{
 };
 
 use super::{
-    device::{Found, HeadsetConnector},
+    device::{Found, HeadsetConnector, HeadsetDevice},
     mapping::{command_values, read_state},
     model::{Connection, HeadsetCommand, HeadsetState},
 };
@@ -99,6 +99,11 @@ impl HeadsetHandle {
     }
 }
 
+/// Writes to the headset with the stale-link time limit. `None` means it timed out.
+async fn write(device: &dyn HeadsetDevice, values: Vec<(SettingId, Value)>) -> Option<std::result::Result<(), String>> {
+    tokio::time::timeout(WRITE_TIMEOUT, device.set_setting_values(values)).await.ok()
+}
+
 enum Exit {
     Shutdown,
     Disconnected,
@@ -185,11 +190,10 @@ async fn connected(found: &Found, inbox: &mut Inbox, sink: &impl HeadsetSink, st
             }
             () = &mut flush, if pending_eq.is_some() => {
                 let values = pending_eq.take().unwrap_or_default();
-                let write = device.set_setting_values(vec![(SettingId::VolumeAdjustments, Value::I16Vec(values))]);
-                match tokio::time::timeout(WRITE_TIMEOUT, write).await {
-                    Ok(Ok(())) => {}
-                    Ok(Err(e)) => tracing::warn!("couldn't apply EQ: {e}"),
-                    Err(_) => {
+                match write(device.as_ref(), vec![(SettingId::VolumeAdjustments, Value::I16Vec(values))]).await {
+                    Some(Ok(())) => {}
+                    Some(Err(e)) => tracing::warn!("couldn't apply EQ: {e}"),
+                    None => {
                         tracing::warn!("EQ write timed out; reconnecting");
                         return Exit::Disconnected;
                     }
@@ -205,29 +209,32 @@ async fn connected(found: &Found, inbox: &mut Inbox, sink: &impl HeadsetSink, st
                 }
                 Some(Msg::Command(cmd, reply)) => match command_values(&cmd, state) {
                     Err(e) => { let _ = reply.send(Err(e)); }
-                    Ok(values) => {
-                        if let [(SettingId::VolumeAdjustments, Value::I16Vec(bands))] = values.as_slice() {
+                    Ok(mut values) => {
+                        if matches!(cmd, HeadsetCommand::SetEqBands { .. }) {
+                            // command_values returns exactly one VolumeAdjustments write for this command.
+                            let Some((_, Value::I16Vec(bands))) = values.pop() else { unreachable!() };
                             if pending_eq.is_none() {
                                 flush.as_mut().reset(Instant::now() + EQ_COALESCE);
                             }
-                            pending_eq = Some(bands.clone());
-                            // Show the new curve immediately so faders don't jump back while coalescing.
+                            // Show the pending curve now, so edits to other bands within the coalescing
+                            // window start from it rather than from the device's last reported values.
                             if let Some(eq) = state.eq.as_mut() {
                                 eq.values = bands.clone();
                                 eq.preset = None;
                             }
+                            pending_eq = Some(bands);
                             sink.state(state);
                             let _ = reply.send(Ok(()));
                         } else {
                             tracing::info!("headset command {cmd:?}");
-                            match tokio::time::timeout(WRITE_TIMEOUT, device.set_setting_values(values)).await {
-                                Ok(result) => {
+                            match write(device.as_ref(), values).await {
+                                Some(result) => {
                                     let _ = reply.send(result.map_err(|e| {
                                         AudioError::Unavailable(format!("Couldn't change the headphones: {e}"))
                                     }));
                                     publish(state);
                                 }
-                                Err(_) => {
+                                None => {
                                     tracing::warn!("headset command {cmd:?} timed out; reconnecting");
                                     let _ = reply.send(Err(no_response()));
                                     return Exit::Disconnected;

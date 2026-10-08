@@ -31,12 +31,11 @@ fn clamp01(v: f32) -> Result<f32> {
 }
 
 impl<B: AudioBackend> AppCore<B> {
-    pub fn new(backend: B, settings: Settings, accent: String) -> Self {
+    pub fn new(backend: B, settings: Settings) -> Self {
         let state = UiState {
             routing_available: backend.routing_available(),
             mic: settings.mic.clone(),
             ui: settings.ui.clone(),
-            accent,
             ..Default::default()
         };
         Self { backend, settings, state, seen_sessions: HashSet::new(), settings_dirty: false }
@@ -135,7 +134,6 @@ impl<B: AudioBackend> AppCore<B> {
             routing_available: self.backend.routing_available(),
             mic: self.settings.mic.clone(),
             ui: self.settings.ui.clone(),
-            accent: self.state.accent.clone(),
         }
     }
 
@@ -152,7 +150,7 @@ impl<B: AudioBackend> AppCore<B> {
             .devices
             .iter()
             .find(|d| d.id == id)
-            .ok_or_else(|| AudioError::NotFound("That device is no longer connected".into()))
+            .ok_or_else(AudioError::device_gone)
     }
 
     fn default_mic(&self) -> Result<&Device> {
@@ -249,7 +247,7 @@ impl<B: AudioBackend> AppCore<B> {
                     .device(&id)?
                     .boost
                     .clone()
-                    .ok_or_else(|| AudioError::Unavailable("This microphone has no boost control".into()))?;
+                    .ok_or_else(AudioError::no_boost)?;
                 let db = db.clamp(b.min, b.max);
                 self.backend.set_mic_boost(&id, db)?;
                 self.patch_device(&id, |d| {

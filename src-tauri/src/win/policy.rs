@@ -1,11 +1,10 @@
 #![allow(non_snake_case)]
-use windows::core::{IUnknown, IUnknown_Vtbl, GUID, HRESULT, PCWSTR};
+use windows::core::{IUnknown, IUnknown_Vtbl, GUID, HRESULT, HSTRING, PCWSTR};
 use windows::Win32::{
     Media::Audio::ERole,
     System::Com::{CoCreateInstance, CLSCTX_ALL},
 };
 
-use super::util::to_wide;
 use crate::error::Result;
 
 const CLSID_POLICY_CONFIG_CLIENT: GUID = GUID::from_u128(0x870af99c_171d_4f9e_af0d_e63df40c2bc9);
@@ -31,7 +30,7 @@ unsafe trait IPolicyConfig: IUnknown {
 pub fn set_default_endpoint(device_id: &str, role: ERole) -> Result<()> {
     unsafe {
         let pc: IPolicyConfig = CoCreateInstance(&CLSID_POLICY_CONFIG_CLIENT, None, CLSCTX_ALL)?;
-        let wide = to_wide(device_id);
+        let wide = HSTRING::from(device_id);
         pc.SetDefaultEndpoint(PCWSTR(wide.as_ptr()), role).ok()?;
     }
     Ok(())

@@ -77,7 +77,7 @@ impl WorkerHandle {
     }
 }
 
-pub fn spawn<F, B, S>(make_backend: F, settings_path: PathBuf, accent: String, sink: S) -> WorkerHandle
+pub fn spawn<F, B, S>(make_backend: F, settings_path: PathBuf, sink: S) -> WorkerHandle
 where
     F: FnOnce() -> Result<B> + Send + 'static,
     B: AudioBackend + 'static,
@@ -95,7 +95,7 @@ where
                     return;
                 }
             };
-            let mut core = AppCore::new(backend, Settings::load(&settings_path), accent);
+            let mut core = AppCore::new(backend, Settings::load(&settings_path));
             run_loop(&mut core, &rx, &settings_path, &sink);
         })
         .expect("failed to spawn audio worker thread");
@@ -248,7 +248,7 @@ mod tests {
     fn emits_initial_state_and_mic_status() {
         let dir = tempfile::tempdir().unwrap();
         let (tx, rx) = mpsc::channel();
-        let h = spawn(|| Ok(fake()), dir.path().join("s.json"), String::new(), TestSink(tx));
+        let h = spawn(|| Ok(fake()), dir.path().join("s.json"), TestSink(tx));
         assert_eq!(wait_for(&rx, "state"), "state apps=1");
         assert_eq!(wait_for(&rx, "mic"), "mic false");
         h.shutdown();
@@ -259,7 +259,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("s.json");
         let (tx, rx) = mpsc::channel();
-        let h = spawn(|| Ok(fake()), path.clone(), String::new(), TestSink(tx));
+        let h = spawn(|| Ok(fake()), path.clone(), TestSink(tx));
         wait_for(&rx, "state");
         h.command_blocking(Command::SetAppVolume { key: "spotify.exe".into(), volume: 0.25 }).unwrap();
         let err = h.command_blocking(Command::SetAppMute { key: "nope".into(), muted: true }).unwrap_err();
@@ -276,7 +276,7 @@ mod tests {
     fn meters_flow_only_while_metering_is_on() {
         let dir = tempfile::tempdir().unwrap();
         let (tx, rx) = mpsc::channel();
-        let h = spawn(|| Ok(fake()), dir.path().join("s.json"), String::new(), TestSink(tx));
+        let h = spawn(|| Ok(fake()), dir.path().join("s.json"), TestSink(tx));
         wait_for(&rx, "state");
         std::thread::sleep(Duration::from_millis(200));
         assert!(rx.try_iter().all(|m| !m.starts_with("meters")));
@@ -297,7 +297,6 @@ mod tests {
         let h = spawn::<_, FakeBackend, _>(
             || Err(AudioError::Os("no audio".into())),
             dir.path().join("s.json"),
-            String::new(),
             TestSink(tx),
         );
         assert_eq!(wait_for(&rx, "notice"), "notice no audio");

@@ -25,7 +25,6 @@ pub fn run() {
             let worker = worker::spawn(
                 crate::win::WasapiBackend::new,
                 settings_path.clone(),
-                crate::win::accent_hex(),
                 sink::TauriSink { app: handle.clone() },
             );
             app.manage(worker);

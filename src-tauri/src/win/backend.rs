@@ -103,7 +103,7 @@ impl WasapiBackend {
         self.endpoints
             .iter()
             .find(|e| e.id == id)
-            .ok_or_else(|| AudioError::NotFound("That device is no longer connected".into()))
+            .ok_or_else(AudioError::device_gone)
     }
 
     fn endpoint_volume(&self, id: &str) -> Result<IAudioEndpointVolume> {
@@ -321,13 +321,13 @@ impl AudioBackend for WasapiBackend {
     }
 
     fn set_session_volume(&mut self, id: &str, volume: f32) -> Result<()> {
-        let h = self.sessions.get(id).ok_or_else(|| AudioError::NotFound("That audio session has ended".into()))?;
+        let h = self.sessions.get(id).ok_or_else(AudioError::session_ended)?;
         unsafe { h.volume.SetMasterVolume(volume, std::ptr::null())? };
         Ok(())
     }
 
     fn set_session_mute(&mut self, id: &str, muted: bool) -> Result<()> {
-        let h = self.sessions.get(id).ok_or_else(|| AudioError::NotFound("That audio session has ended".into()))?;
+        let h = self.sessions.get(id).ok_or_else(AudioError::session_ended)?;
         unsafe { h.volume.SetMute(muted, std::ptr::null())? };
         Ok(())
     }
@@ -371,7 +371,7 @@ impl AudioBackend for WasapiBackend {
 
     fn set_mic_boost(&mut self, id: &str, db: f32) -> Result<()> {
         let level =
-            self.boost_level(id)?.ok_or_else(|| AudioError::Unavailable("This microphone has no boost control".into()))?;
+            self.boost_level(id)?.ok_or_else(AudioError::no_boost)?;
         boost::write(&level, db)
     }
 

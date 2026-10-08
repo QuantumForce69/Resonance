@@ -1,4 +1,3 @@
-mod accent;
 mod backend;
 pub mod boost;
 mod com;
@@ -11,6 +10,5 @@ pub mod routing;
 mod watcher;
 mod util;
 
-pub use accent::accent_hex;
 pub use backend::WasapiBackend;
 pub use icon::exe_icon_png_base64;

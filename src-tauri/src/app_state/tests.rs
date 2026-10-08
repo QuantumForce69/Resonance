@@ -22,7 +22,7 @@ fn fake() -> FakeBackend {
 }
 
 fn core_with(settings: Settings) -> AppCore<FakeBackend> {
-    let mut c = AppCore::new(fake(), settings, "#112233".into());
+    let mut c = AppCore::new(fake(), settings);
     c.refresh().unwrap();
     c
 }
@@ -37,7 +37,6 @@ fn refresh_builds_state_with_device_prefs_and_sorting() {
     s.devices.insert("out2".into(), DevicePrefs { alias: Some("Desk".into()), hidden: true });
     let c = core_with(s);
     let st = c.state();
-    assert_eq!(st.accent, "#112233");
     assert!(st.routing_available);
     let flows: Vec<_> = st.devices.iter().map(|d| d.flow).collect();
     assert_eq!(flows, vec![Flow::Render, Flow::Render, Flow::Capture]);
@@ -89,7 +88,7 @@ fn existing_sessions_are_not_reapplied_every_refresh() {
 fn pid_keys_are_never_remembered() {
     let mut f = fake();
     f.sessions.push(FakeBackend::session("x", 99, None));
-    let mut c = AppCore::new(f, Settings::default(), String::new());
+    let mut c = AppCore::new(f, Settings::default());
     c.refresh().unwrap();
     assert!(c.settings().apps.keys().all(|k| !k.starts_with("pid:")));
 }
@@ -162,7 +161,7 @@ fn mic_mute_toggle_and_set() {
 fn mic_commands_fail_without_a_default_mic() {
     let mut f = fake();
     f.devices.retain(|d| d.flow == Flow::Render);
-    let mut c = AppCore::new(f, Settings::default(), String::new());
+    let mut c = AppCore::new(f, Settings::default());
     c.refresh().unwrap();
     assert_eq!(c.mic_muted(), None);
     assert_eq!(c.apply(Command::ToggleMicMute).unwrap_err().code(), "notFound");

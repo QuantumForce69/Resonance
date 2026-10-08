@@ -13,6 +13,18 @@ pub enum AudioError {
 }
 
 impl AudioError {
+    pub fn device_gone() -> Self {
+        AudioError::NotFound("That device is no longer connected".into())
+    }
+
+    pub fn session_ended() -> Self {
+        AudioError::NotFound("That audio session has ended".into())
+    }
+
+    pub fn no_boost() -> Self {
+        AudioError::Unavailable("This microphone has no boost control".into())
+    }
+
     pub fn code(&self) -> &'static str {
         match self {
             AudioError::NotFound(_) => "notFound",

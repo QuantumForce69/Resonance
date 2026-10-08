@@ -54,7 +54,6 @@ export interface UiState {
   routingAvailable: boolean;
   mic: MicConfig;
   ui: UiSettings;
-  accent: string;
 }
 
 export interface MeterFrame {

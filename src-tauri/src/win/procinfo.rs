@@ -1,13 +1,12 @@
 use std::ffi::c_void;
 
-use windows::core::{w, PCWSTR, PWSTR};
+use windows::core::{w, HSTRING, PCWSTR, PWSTR};
 use windows::Win32::{
     Foundation::{CloseHandle, ERROR_INVALID_PARAMETER},
     Storage::FileSystem::{GetFileVersionInfoSizeW, GetFileVersionInfoW, VerQueryValueW},
     System::Threading::{OpenProcess, QueryFullProcessImageNameW, PROCESS_NAME_WIN32, PROCESS_QUERY_LIMITED_INFORMATION},
 };
 
-use super::util::to_wide;
 
 #[derive(Debug, Clone)]
 pub struct ProcInfo {
@@ -47,7 +46,7 @@ pub fn lookup(pid: u32) -> ProcLookup {
 /// Reads the FileDescription version resource (e.g. "Google Chrome").
 pub fn file_description(path: &str) -> Option<String> {
     unsafe {
-        let wide = to_wide(path);
+        let wide = HSTRING::from(path);
         let size = GetFileVersionInfoSizeW(PCWSTR(wide.as_ptr()), None);
         if size == 0 {
             return None;
@@ -63,7 +62,7 @@ pub fn file_description(path: &str) -> Option<String> {
         }
         let lang = *(ptr as *const u16);
         let codepage = *(ptr as *const u16).add(1);
-        let key = to_wide(&format!("\\StringFileInfo\\{lang:04x}{codepage:04x}\\FileDescription"));
+        let key = HSTRING::from(format!("\\StringFileInfo\\{lang:04x}{codepage:04x}\\FileDescription"));
         if !VerQueryValueW(data.as_ptr() as *const c_void, PCWSTR(key.as_ptr()), &mut ptr, &mut len).as_bool() || len == 0 {
             return None;
         }
