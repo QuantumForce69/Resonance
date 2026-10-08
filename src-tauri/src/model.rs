@@ -108,6 +108,8 @@ pub struct App {
     pub volume: f32,
     pub muted: bool,
     pub output: Option<String>,
+    /// Send level into calls, if this app is sent.
+    pub send: Option<f32>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
@@ -189,6 +191,7 @@ pub enum Command {
     SetUiSettings { ui: UiSettings },
     ResetAppMemory,
     SetProcessing { processing: ProcessingSettings },
+    SetAppSend { key: String, level: Option<f32> },
 }
 
 #[cfg(test)]
@@ -228,6 +231,9 @@ mod tests {
         let Command::SetProcessing { processing } = c else { panic!("wrong command") };
         assert!(processing.enabled);
         assert_eq!(processing.monitor_level, 0.5);
+
+        let c: Command = serde_json::from_str(r#"{"type":"setAppSend","key":"spotify.exe","level":null}"#).unwrap();
+        assert_eq!(c, Command::SetAppSend { key: "spotify.exe".into(), level: None });
     }
 
     #[test]

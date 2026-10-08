@@ -133,7 +133,10 @@ let mut core = Self {
         }
     }
 
-    fn build_state(&self, raw: Vec<RawDevice>, apps: Vec<App>) -> UiState {
+    fn build_state(&self, raw: Vec<RawDevice>, mut apps: Vec<App>) -> UiState {
+        for a in &mut apps {
+            a.send = self.settings.call_sends.get(&a.key).copied();
+        }
         let mut devices: Vec<Device> = raw
             .into_iter()
             .map(|d| {
@@ -315,6 +318,9 @@ let mut core = Self {
             Command::ResetAppMemory => {
                 self.settings.apps.clear();
                 self.settings_dirty = true;
+            }
+            Command::SetAppSend { .. } => {
+                return Err(AudioError::Unavailable("Sending apps into calls isn't available yet".into()));
             }
             Command::SetProcessing { processing } => {
                 let mut p = processing;

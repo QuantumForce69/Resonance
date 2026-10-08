@@ -40,6 +40,8 @@ pub struct Settings {
     pub processing: ProcessingSettings,
     /// Default mics to restore; present while processing has them pointed at VB-Cable.
     pub processing_restore: Option<RestoreDefaults>,
+    /// Apps sent into calls: app key → send level (0..1).
+    pub call_sends: BTreeMap<String, f32>,
 }
 
 impl Default for Settings {
@@ -52,6 +54,7 @@ impl Default for Settings {
             ui: UiSettings::default(),
             processing: ProcessingSettings::default(),
             processing_restore: None,
+            call_sends: BTreeMap::new(),
         }
     }
 }
@@ -114,11 +117,13 @@ mod tests {
         s.processing.enabled = true;
         s.processing.dsp.gate.threshold_db = -50.0;
         s.processing_restore = Some(RestoreDefaults { console: Some("mic1".into()), comms: None });
+        s.call_sends.insert("spotify.exe".into(), 0.5);
         s.save(&path).unwrap();
         assert_eq!(Settings::load(&path), s);
         let text = std::fs::read_to_string(&path).unwrap();
         assert!(text.contains("\"startMinimized\""));
         assert!(text.contains("\"processingRestore\""));
+        assert!(text.contains("\"callSends\""));
     }
 
     #[test]

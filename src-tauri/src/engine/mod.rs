@@ -6,7 +6,7 @@ pub mod feed;
 pub mod fifo;
 
 pub use config::{
-    CompressorParams, DenoiseParams, DspParams, EngineStatus, GateParams, LimiterParams, ProcessingSettings,
+    CallSettings, CompressorParams, DenoiseParams, DspParams, EngineStatus, GateParams, LimiterParams, ProcessingSettings,
     ProcessingView, RestoreDefaults,
 };
 
@@ -25,6 +25,7 @@ pub struct Route {
 pub struct EngineParams {
     pub dsp: DspParams,
     pub monitor_level: f32,
+    pub call: CallSettings,
 }
 
 /// The real-time processing engine (WASAPI in production, a fake in tests). Owned by the audio worker.

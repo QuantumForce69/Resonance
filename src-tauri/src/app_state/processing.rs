@@ -78,11 +78,13 @@ impl<B: AudioBackend> AppCore<B> {
             settings: self.settings.processing.clone(),
             status: self.engine_state.status.clone(),
             cable_installed: find_cable(&self.state.devices).is_some(),
+            call_available: false,
         }
     }
 
     pub(super) fn engine_params(&self) -> EngineParams {
-        EngineParams { dsp: self.settings.processing.dsp, monitor_level: self.settings.processing.monitor_level }
+        let p = &self.settings.processing;
+        EngineParams { dsp: p.dsp, monitor_level: p.monitor_level, call: p.call }
     }
 
     /// The mic to process: the chosen one, else the default from before processing, else the current

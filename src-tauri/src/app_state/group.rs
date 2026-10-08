@@ -49,6 +49,7 @@ pub fn group_sessions(sessions: &[RawSession]) -> Vec<App> {
             volume: s.volume,
             muted: s.muted,
             output: None,
+            send: None,
         });
         if app.name.is_empty() {
             if let Some(n) = s.display_name.as_deref().map(str::trim).filter(|n| !n.is_empty()) {

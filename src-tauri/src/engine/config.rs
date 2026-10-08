@@ -146,6 +146,37 @@ impl DspParams {
     }
 }
 
+/// How sent apps are mixed into calls.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct CallSettings {
+    /// Level of all sent apps together (0..1).
+    pub master: f32,
+    /// Lower sent apps while the user talks.
+    pub duck: bool,
+    /// How far sent apps drop while the user talks.
+    pub duck_db: f32,
+}
+
+impl Default for CallSettings {
+    fn default() -> Self {
+        Self { master: 1.0, duck: true, duck_db: -12.0 }
+    }
+}
+
+impl CallSettings {
+    /// Forced into the allowed ranges; non-numbers fall back to defaults.
+    pub fn clamped(&self) -> Self {
+        let d = CallSettings::default();
+        CallSettings {
+            master: fit(self.master, 0.0, 1.0, d.master),
+            duck: self.duck,
+            duck_db: fit(self.duck_db, -40.0, 0.0, d.duck_db),
+        }
+    }
+}
+
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
 pub struct ProcessingSettings {
@@ -156,11 +187,12 @@ pub struct ProcessingSettings {
     /// Play the processed mic on the default output.
     pub monitor: bool,
     pub monitor_level: f32,
+    pub call: CallSettings,
 }
 
 impl Default for ProcessingSettings {
     fn default() -> Self {
-        Self { enabled: false, source_id: None, dsp: DspParams::default(), monitor: false, monitor_level: 0.7 }
+        Self { enabled: false, source_id: None, dsp: DspParams::default(), monitor: false, monitor_level: 0.7, call: CallSettings::default() }
     }
 }
 
@@ -188,6 +220,8 @@ pub struct ProcessingView {
     pub settings: ProcessingSettings,
     pub status: EngineStatus,
     pub cable_installed: bool,
+    /// Windows can capture single apps (process loopback), so apps can be sent into calls.
+    pub call_available: bool,
 }
 
 #[cfg(test)]
@@ -262,6 +296,19 @@ mod tests {
         assert_eq!(v["settings"]["dsp"]["gate"]["thresholdDb"], -45.0);
         assert!(v["settings"]["dsp"]["compressor"]["makeupDb"].is_null());
         assert_eq!(serde_json::to_value(EngineStatus::NoCable).unwrap()["state"], "noCable");
+    }
+
+    #[test]
+    fn call_settings_default_and_clamp() {
+        let c = CallSettings::default();
+        assert_eq!((c.master, c.duck, c.duck_db), (1.0, true, -12.0));
+        let wild = CallSettings { master: 3.0, duck: false, duck_db: -90.0 }.clamped();
+        assert_eq!((wild.master, wild.duck, wild.duck_db), (1.0, false, -40.0));
+        let nan = CallSettings { master: f32::NAN, duck: true, duck_db: f32::NAN }.clamped();
+        assert_eq!((nan.master, nan.duck_db), (1.0, -12.0));
+        let v = serde_json::to_value(ProcessingView::default()).unwrap();
+        assert_eq!(v["settings"]["call"]["duckDb"], -12.0);
+        assert_eq!(v["callAvailable"], false);
     }
 
     #[test]

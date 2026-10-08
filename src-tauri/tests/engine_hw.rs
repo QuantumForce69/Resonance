@@ -37,7 +37,7 @@ fn processes_the_default_mic_into_the_cable_without_dropouts() {
     dsp.gate.enabled = false;
     dsp.compressor.enabled = false;
     dsp.limiter.enabled = false;
-    let params = EngineParams { dsp, monitor_level: 0.0 };
+    let params = EngineParams { dsp, monitor_level: 0.0, call: Default::default() };
 
     let mut engine = WasapiEngine::new();
     engine.start(&Route { source_id: mic, cable_id: cable_in, monitor_id: None }, &params).unwrap();
@@ -55,7 +55,7 @@ fn processes_the_default_mic_into_the_cable_without_dropouts() {
         peak_cable = peak_cable.max(listener.peaks(Some(&cable_out)).mic);
     }
     listener.stop_metering();
-    engine.set_params(&EngineParams { dsp: DspParams::default(), monitor_level: 0.0 });
+    engine.set_params(&EngineParams { dsp: DspParams::default(), monitor_level: 0.0, call: Default::default() });
     thread::sleep(Duration::from_millis(500));
     let dropouts = engine.underruns() - warm_up;
     println!("mic peak {peak_in:.5}, CABLE Output peak {peak_cable:.5}, dropouts {dropouts} (+{warm_up} while starting)");
