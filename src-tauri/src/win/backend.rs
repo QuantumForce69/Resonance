@@ -4,8 +4,8 @@ use windows::core::Interface;
 use windows::Win32::Foundation::S_OK;
 use windows::Win32::Media::Audio::{
     eCapture, eCommunications, eConsole, eMultimedia, eRender, AudioSessionStateExpired,
-    Endpoints::{IAudioEndpointVolume, IAudioMeterInformation},
-    IAudioSessionControl2, IAudioSessionManager2, IAudioVolumeLevel, IMMDevice, IMMDeviceEnumerator, ISimpleAudioVolume,
+    Endpoints::{IAudioEndpointVolume, IAudioEndpointVolumeCallback, IAudioMeterInformation},
+    IAudioSessionControl, IAudioSessionControl2, IAudioSessionEvents, IAudioSessionNotification, IAudioSessionManager2, IAudioVolumeLevel, IMMDevice, IMMDeviceEnumerator, ISimpleAudioVolume,
     DEVICE_STATE, DEVICE_STATE_ACTIVE, DEVICE_STATE_UNPLUGGED,
 };
 use windows::Win32::System::Com::CLSCTX_ALL;
@@ -19,7 +19,7 @@ use super::{
     procinfo::{self, ProcLookup},
     routing::Routing,
     util::take_pwstr,
-    watcher::DeviceWatch,
+    watcher::{DeviceWatch, StateWatch},
 };
 use crate::{
     backend::AudioBackend,
@@ -27,13 +27,25 @@ use crate::{
     model::*,
 };
 
-/// Safety net: re-read the device topology at least this often (in polls) even if Windows
-/// never sends a change notification. At the 250 ms poll rate this is every 5 s.
-const FULL_REFRESH_POLLS: u32 = 20;
+/// Safety net: re-read everything at least this often (in polls) even if Windows sends no notification
+/// (per-app routing changed in Windows Settings and mic boost have none). At the 250 ms poll rate this is
+/// every 10 s.
+const FULL_REFRESH_POLLS: u32 = 40;
 
 struct SessionHandle {
     volume: ISimpleAudioVolume,
     meter: IAudioMeterInformation,
+    /// Registered for change notifications while this handle lives.
+    control: IAudioSessionControl,
+    events: IAudioSessionEvents,
+}
+
+impl Drop for SessionHandle {
+    fn drop(&mut self) {
+        unsafe {
+            let _ = self.control.UnregisterAudioSessionNotification(&self.events);
+        }
+    }
 }
 
 /// Everything about an endpoint that only changes when Windows reports a topology change.
@@ -47,15 +59,34 @@ struct Endpoint {
     volume: Option<IAudioEndpointVolume>,
     /// Active outputs only.
     sessions: Option<IAudioSessionManager2>,
+    /// Callbacks registered on `volume` / `sessions`, unregistered on drop.
+    volume_watch: Option<IAudioEndpointVolumeCallback>,
+    session_watch: Option<IAudioSessionNotification>,
+}
+
+impl Drop for Endpoint {
+    fn drop(&mut self) {
+        unsafe {
+            if let (Some(v), Some(cb)) = (&self.volume, &self.volume_watch) {
+                let _ = v.UnregisterControlChangeNotify(cb);
+            }
+            if let (Some(m), Some(cb)) = (&self.sessions, &self.session_watch) {
+                let _ = m.UnregisterSessionNotification(cb);
+            }
+        }
+    }
 }
 
 /// WASAPI implementation of `AudioBackend`. Must be created and used on one thread.
 ///
 /// The device list, defaults, names and per-device COM objects are cached and rebuilt only when
-/// Windows notifies a change (or every `FULL_REFRESH_POLLS`). Volumes, mutes and sessions are read
-/// on every poll, so external changes still show up within one poll.
+/// Windows notifies a device change. Volumes, mutes and sessions are re-read only when Windows notifies a
+/// session or volume change (or after Resonance changes something itself); otherwise a poll returns the
+/// last snapshot. Everything is re-read every `FULL_REFRESH_POLLS` as a safety net.
 pub struct WasapiBackend {
     watch: DeviceWatch,
+    changes: StateWatch,
+    cached: Option<Snapshot>,
     enumerator: IMMDeviceEnumerator,
     endpoints: Vec<Endpoint>,
     defaults: [Option<String>; 4],
@@ -84,6 +115,8 @@ impl WasapiBackend {
         let enumerator = create_enumerator()?;
         Ok(Self {
             watch: DeviceWatch::register(&enumerator)?,
+            changes: StateWatch::new(),
+            cached: None,
             enumerator,
             endpoints: Vec::new(),
             defaults: Default::default(),
@@ -159,14 +192,26 @@ impl WasapiBackend {
                     let device = coll.Item(i)?;
                     let id = device_id(&device)?;
                     let active = device.GetState()? == DEVICE_STATE_ACTIVE;
+                    let volume = if active { endpoint_volume(&device).ok() } else { None };
+                    let sessions = if active && flow == Flow::Render {
+                        device.Activate::<IAudioSessionManager2>(CLSCTX_ALL, None).ok()
+                    } else {
+                        None
+                    };
+                    let volume_watch = volume
+                        .as_ref()
+                        .filter(|v| v.RegisterControlChangeNotify(&self.changes.volumes).is_ok())
+                        .map(|_| self.changes.volumes.clone());
+                    let session_watch = sessions
+                        .as_ref()
+                        .filter(|m| m.RegisterSessionNotification(&self.changes.sessions).is_ok())
+                        .map(|_| self.changes.sessions.clone());
                     endpoints.push(Endpoint {
                         name: friendly_name(&device).unwrap_or_else(|_| "Unknown device".into()),
-                        volume: if active { endpoint_volume(&device).ok() } else { None },
-                        sessions: if active && flow == Flow::Render {
-                            device.Activate::<IAudioSessionManager2>(CLSCTX_ALL, None).ok()
-                        } else {
-                            None
-                        },
+                        volume,
+                        sessions,
+                        volume_watch,
+                        session_watch,
                         state: if active { DeviceState::Active } else { DeviceState::Unplugged },
                         id,
                         device,
@@ -191,7 +236,16 @@ impl WasapiBackend {
     }
 
     fn snapshot_inner(&mut self) -> Result<Snapshot> {
-        if self.watch.take_dirty() || self.polls_since_full >= FULL_REFRESH_POLLS || self.endpoints.is_empty() {
+        let topology_changed =
+            self.watch.take_dirty() || self.polls_since_full >= FULL_REFRESH_POLLS || self.endpoints.is_empty();
+        let state_changed = self.changes.take_dirty();
+        if !topology_changed && !state_changed {
+            if let Some(cached) = &self.cached {
+                self.polls_since_full += 1;
+                return Ok(cached.clone());
+            }
+        }
+        if topology_changed {
             self.refresh_topology()?;
         } else {
             self.polls_since_full += 1;
@@ -235,8 +289,9 @@ impl WasapiBackend {
             });
         }
 
-        // Sessions on every active output.
-        self.sessions.clear();
+        // Sessions on every active output. Handles of sessions seen before are kept (with their
+        // notifications); new ones are registered; ones that went away are dropped (unregistered).
+        let mut previous = std::mem::take(&mut self.sessions);
         let mut sessions = Vec::new();
         let mut live_pids = HashSet::new();
         let managers: Vec<(String, IAudioSessionManager2)> =
@@ -263,10 +318,20 @@ impl WasapiBackend {
                     };
                     live_pids.insert(pid);
                     let Ok(id) = ctl2.GetSessionInstanceIdentifier().map(|p| take_pwstr(p)) else { continue };
-                    let (Ok(volume), Ok(meter)) = (ctl.cast::<ISimpleAudioVolume>(), ctl.cast::<IAudioMeterInformation>())
-                    else {
-                        continue;
+                    let handle = match previous.remove(&id) {
+                        Some(h) => h,
+                        None => {
+                            let (Ok(volume), Ok(meter)) =
+                                (ctl.cast::<ISimpleAudioVolume>(), ctl.cast::<IAudioMeterInformation>())
+                            else {
+                                continue;
+                            };
+                            let events = self.changes.session_events.clone();
+                            let _ = ctl.RegisterAudioSessionNotification(&events);
+                            SessionHandle { volume, meter, control: ctl.clone(), events }
+                        }
                     };
+                    let volume = &handle.volume;
                     let level = volume.GetMasterVolume().unwrap_or(1.0);
                     let muted = volume.GetMute().map(|m| m.as_bool()).unwrap_or(false);
                     let session_name = ctl
@@ -293,13 +358,15 @@ impl WasapiBackend {
                         muted,
                         output,
                     });
-                    self.sessions.insert(id, SessionHandle { volume, meter });
+                    self.sessions.insert(id, handle);
                 }
             }
         }
         self.procs.retain(|pid, _| live_pids.contains(pid));
 
-        Ok(Snapshot { devices, sessions })
+        let snapshot = Snapshot { devices, sessions };
+        self.cached = Some(snapshot.clone());
+        Ok(snapshot)
     }
 }
 
@@ -323,24 +390,28 @@ impl AudioBackend for WasapiBackend {
     fn set_session_volume(&mut self, id: &str, volume: f32) -> Result<()> {
         let h = self.sessions.get(id).ok_or_else(AudioError::session_ended)?;
         unsafe { h.volume.SetMasterVolume(volume, std::ptr::null())? };
+        self.changes.mark_dirty();
         Ok(())
     }
 
     fn set_session_mute(&mut self, id: &str, muted: bool) -> Result<()> {
         let h = self.sessions.get(id).ok_or_else(AudioError::session_ended)?;
         unsafe { h.volume.SetMute(muted, std::ptr::null())? };
+        self.changes.mark_dirty();
         Ok(())
     }
 
     fn set_device_volume(&mut self, id: &str, volume: f32) -> Result<()> {
         let v = self.endpoint_volume(id)?;
         unsafe { v.SetMasterVolumeLevelScalar(volume, std::ptr::null())? };
+        self.changes.mark_dirty();
         Ok(())
     }
 
     fn set_device_mute(&mut self, id: &str, muted: bool) -> Result<()> {
         let v = self.endpoint_volume(id)?;
         unsafe { v.SetMute(muted, std::ptr::null())? };
+        self.changes.mark_dirty();
         Ok(())
     }
 
@@ -366,13 +437,17 @@ impl AudioBackend for WasapiBackend {
         self.routing
             .as_ref()
             .ok_or_else(|| AudioError::Unavailable("Per-app routing isn't available".into()))?
-            .set(pid, device_id)
+            .set(pid, device_id)?;
+        self.changes.mark_dirty();
+        Ok(())
     }
 
     fn set_mic_boost(&mut self, id: &str, db: f32) -> Result<()> {
         let level =
             self.boost_level(id)?.ok_or_else(AudioError::no_boost)?;
-        boost::write(&level, db)
+        boost::write(&level, db)?;
+        self.changes.mark_dirty();
+        Ok(())
     }
 
     fn peaks(&mut self, mic_device_id: Option<&str>) -> Peaks {

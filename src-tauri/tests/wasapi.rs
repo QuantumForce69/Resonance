@@ -118,3 +118,31 @@ fn external_default_change_is_noticed() {
     other.set_default_device(&original, Role::Communications).unwrap();
     assert!(seen, "the caching backend did not notice the external default change");
 }
+
+/// Volume changes made by another program reach the backend through Windows' notifications even though it
+/// no longer re-reads everything on every poll.
+#[test]
+#[ignore]
+fn external_volume_changes_are_noticed() {
+    let mut watcher = backend();
+    let mut other = backend();
+    let s = watcher.snapshot().unwrap();
+
+    let out = s.devices.iter().find(|d| d.flow == Flow::Render && d.default_console).expect("default output").clone();
+    let target = if out.volume > 0.5 { out.volume - 0.07 } else { out.volume + 0.07 };
+    other.snapshot().unwrap();
+    other.set_device_volume(&out.id, target).unwrap();
+    std::thread::sleep(std::time::Duration::from_millis(300));
+    let seen = watcher.snapshot().unwrap().devices.into_iter().find(|d| d.id == out.id).unwrap().volume;
+    other.set_device_volume(&out.id, out.volume).unwrap();
+    assert!((seen - target).abs() < 0.01, "device volume: expected {target}, saw {seen}");
+
+    if let Some(session) = s.sessions.iter().find(|x| !x.is_system).cloned() {
+        let target = if session.volume > 0.5 { session.volume - 0.07 } else { session.volume + 0.07 };
+        other.set_session_volume(&session.id, target).unwrap();
+        std::thread::sleep(std::time::Duration::from_millis(300));
+        let seen = watcher.snapshot().unwrap().sessions.into_iter().find(|x| x.id == session.id).unwrap().volume;
+        other.set_session_volume(&session.id, session.volume).unwrap();
+        assert!((seen - target).abs() < 0.01, "session volume: expected {target}, saw {seen}");
+    }
+}
