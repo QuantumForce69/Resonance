@@ -7,6 +7,7 @@ vi.mock("../lib/api", () => ({
   send: vi.fn().mockResolvedValue(undefined),
   setMicHotkey: vi.fn().mockResolvedValue(undefined),
   openVbCable: vi.fn().mockResolvedValue(undefined),
+  getAppIcon: vi.fn().mockResolvedValue(null),
 }));
 
 describe("MicView", () => {

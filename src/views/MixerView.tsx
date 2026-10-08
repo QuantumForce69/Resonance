@@ -7,6 +7,7 @@ import { Meter } from "../components/Meter";
 import { MuteButton } from "../components/MuteButton";
 import { Slider } from "../components/Slider";
 import { Banner, ViewHeader } from "../components/ui";
+import { callReady } from "../lib/processing";
 import { ChannelStrip } from "./ChannelStrip";
 
 function subtitle(state: UiState, outName: string | undefined) {
@@ -19,6 +20,7 @@ function subtitle(state: UiState, outName: string | undefined) {
 export function MixerView({ state }: { state: UiState }) {
   const out = defaultOutput(state);
   const outs = outputs(state);
+  const call = !state.processing.callAvailable ? "unavailable" : callReady(state) ? "ready" : "off";
 
   return (
     <div className="flex h-full flex-col gap-5">
@@ -31,7 +33,7 @@ export function MixerView({ state }: { state: UiState }) {
           {state.apps.length === 0 ? (
             <div className="grid flex-1 place-items-center text-[13px] text-dim">Apps appear here as soon as they play sound.</div>
           ) : (
-            state.apps.map((a) => <ChannelStrip key={a.key} app={a} />)
+            state.apps.map((a) => <ChannelStrip key={a.key} app={a} call={call} />)
           )}
         </div>
 

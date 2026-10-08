@@ -1,6 +1,6 @@
 import { Power } from "lucide-react";
 import { openVbCable } from "../lib/api";
-import { amountCurve, autoMakeup, compressorCurve, processingSources } from "../lib/processing";
+import { amountCurve, autoMakeup, compressorCurve, pct, processingSources, signedDb } from "../lib/processing";
 import { setProcessing } from "../lib/store";
 import type { CompressorParams, DspParams, EngineStatus, GateParams, LimiterParams, ProcessingSettings, UiState } from "../lib/types";
 import { DbScale } from "../components/DbScale";
@@ -9,10 +9,10 @@ import { Meter } from "../components/Meter";
 import { Slider } from "../components/Slider";
 import { StageModule } from "../components/StageModule";
 import { Banner, Toggle } from "../components/ui";
+import { CallMix } from "./CallMix";
 
 const round1 = (v: number) => Math.round(v * 10) / 10;
-const pct = (v: number) => `${Math.round(v * 100)}%`;
-const db = (v: number) => `${v > 0 ? "+" : ""}${round1(v)} dB`;
+const db = signedDb;
 const ms = (v: number) => `${round1(v)} ms`;
 const ratio = (v: number) => `${round1(v)}:1`;
 
@@ -189,6 +189,8 @@ export function ProcessingPanel({ state }: { state: UiState }) {
           <Knob label="Ceiling" value={l.ceilingDb} min={-12} max={0} step={0.5} format={db} onChange={(ceilingDb) => limiter({ ceilingDb })} />
         </StageModule>
       </div>
+
+      <CallMix state={state} />
 
       <div className="grid gap-6 border-t border-groove pt-6 md:grid-cols-2">
         <div className="flex flex-col gap-2">

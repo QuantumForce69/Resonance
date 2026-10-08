@@ -6,6 +6,7 @@ import * as api from "../lib/api";
 vi.mock("../lib/api", () => ({
   send: vi.fn().mockResolvedValue(undefined),
   openVbCable: vi.fn().mockResolvedValue(undefined),
+  getAppIcon: vi.fn().mockResolvedValue(null),
 }));
 
 /** The settings object sent by the last setProcessing command. */
