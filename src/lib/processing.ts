@@ -1,4 +1,4 @@
-import type { CompressorParams, Device, UiState } from "./types";
+import type { App, CompressorParams, Device, UiState } from "./types";
 
 const CABLE_CAPTURE = "CABLE Output";
 
@@ -23,3 +23,17 @@ export const processingSources = (s: UiState): Device[] =>
   s.devices.filter((d) => d.flow === "capture" && d.state === "active" && !d.originalName.startsWith(CABLE_CAPTURE));
 
 export const isProcessed = (s: UiState) => s.processing.status.state === "running";
+
+const CALL_APPS = ["discord.exe", "teams.exe", "ms-teams.exe", "zoom.exe", "skype.exe", "slack.exe"];
+export const DEFAULT_SEND = 0.7;
+export const ECHO_WARNING = "Sending a call app into the call makes everyone hear themselves.";
+export const CALL_OFF_HINT = "Turn on Processing to send apps into calls";
+
+/** Apps can be sent right now: Windows can capture single apps and processing is running. */
+export const callReady = (s: UiState) => s.processing.callAvailable && isProcessed(s);
+export const isCallApp = (a: App) => CALL_APPS.includes(a.key);
+export const sentApps = (s: UiState) => s.apps.filter((a) => a.send !== null);
+
+const round1 = (v: number) => Math.round(v * 10) / 10;
+export const pct = (v: number) => `${Math.round(v * 100)}%`;
+export const signedDb = (v: number) => `${v > 0 ? "+" : ""}${round1(v)} dB`;

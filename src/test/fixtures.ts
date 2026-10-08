@@ -27,6 +27,7 @@ export function makeApp(p: Partial<App> & { key: string }): App {
     volume: 1,
     muted: false,
     output: null,
+    send: null,
     ...p,
   };
 }
@@ -40,9 +41,10 @@ export const DEFAULT_DSP: DspParams = {
 
 export function makeProcessing(p: Partial<ProcessingView> = {}): ProcessingView {
   return {
-    settings: { enabled: false, sourceId: null, dsp: structuredClone(DEFAULT_DSP), monitor: false, monitorLevel: 0.7 },
+    settings: { enabled: false, sourceId: null, dsp: structuredClone(DEFAULT_DSP), monitor: false, monitorLevel: 0.7, call: { master: 1, duck: true, duckDb: -12 } },
     status: { state: "off" },
     cableInstalled: true,
+    callAvailable: true,
     ...p,
   };
 }

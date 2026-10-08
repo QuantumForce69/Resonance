@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import { send, sendHeadset, setMicHotkey } from "./api";
+import { DEFAULT_SEND, ECHO_WARNING, isCallApp } from "./processing";
 import type { App, Command, Device, HeadsetCommand, HeadsetState, MicConfig, ProcessingSettings, UiState } from "./types";
 
 export interface Toast {
@@ -58,6 +59,13 @@ export const toggleDeviceMute = (d: Device) => run({ type: "setDeviceMute", id: 
 export const toggleAppMute = (a: App) => run({ type: "setAppMute", key: a.key, muted: !a.muted });
 export const toggleMicMute = (mic: Device) => run({ type: "setMicMute", muted: !mic.muted });
 export const setProcessing = (processing: ProcessingSettings) => run({ type: "setProcessing", processing });
+export const setAppSend = (app: App, level: number | null) => run({ type: "setAppSend", key: app.key, level });
+
+/** Sends an app into calls (at the default level) or stops sending it; warns before sending a call app. */
+export function toggleAppSend(app: App) {
+  if (app.send === null && isCallApp(app)) useStore.getState().pushToast("info", ECHO_WARNING);
+  return setAppSend(app, app.send === null ? DEFAULT_SEND : null);
+}
 
 /** Sends a headphone command; failures become toasts. */
 export const runHeadset = (cmd: HeadsetCommand) => attempt(() => sendHeadset(cmd));

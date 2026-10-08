@@ -36,6 +36,7 @@ export interface App {
   volume: number;
   muted: boolean;
   output: string | null;
+  send: number | null;
 }
 
 export interface MicConfig {
@@ -86,12 +87,19 @@ export interface DspParams {
   limiter: LimiterParams;
 }
 
+export interface CallSettings {
+  master: number;
+  duck: boolean;
+  duckDb: number;
+}
+
 export interface ProcessingSettings {
   enabled: boolean;
   sourceId: string | null;
   dsp: DspParams;
   monitor: boolean;
   monitorLevel: number;
+  call: CallSettings;
 }
 
 export type EngineStatus =
@@ -104,6 +112,7 @@ export interface ProcessingView {
   settings: ProcessingSettings;
   status: EngineStatus;
   cableInstalled: boolean;
+  callAvailable: boolean;
 }
 
 export interface UiState {
@@ -138,7 +147,8 @@ export type Command =
   | { type: "setMicConfig"; config: MicConfig }
   | { type: "setUiSettings"; ui: UiSettings }
   | { type: "resetAppMemory" }
-  | { type: "setProcessing"; processing: ProcessingSettings };
+  | { type: "setProcessing"; processing: ProcessingSettings }
+  | { type: "setAppSend"; key: string; level: number | null };
 
 export interface CmdError {
   code: "notFound" | "unavailable" | "invalid" | "os";
