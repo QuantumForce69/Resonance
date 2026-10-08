@@ -3,7 +3,7 @@ import { Maximize2 } from "lucide-react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { showMain } from "../lib/api";
 import { formatDb } from "../lib/levels";
-import { defaultMic, defaultOutput, run, useStore } from "../lib/store";
+import { defaultMic, defaultOutput, run, toggleDeviceMute, useStore } from "../lib/store";
 import { AppRow } from "../components/AppRow";
 import { HeadsetStrip } from "../components/HeadsetStrip";
 import { DbScale } from "../components/DbScale";
@@ -59,7 +59,7 @@ export function Flyout() {
               <div className={`num text-[22px] leading-none font-medium tracking-[-0.02em] ${out.muted ? "text-coral" : ""}`}>
                 {out.muted ? "Muted" : formatDb(out.volume)}
               </div>
-              <MuteButton muted={out.muted} label={out.name} onToggle={() => run({ type: "setDeviceMute", id: out.id, muted: !out.muted })} />
+              <MuteButton muted={out.muted} label={out.name} onToggle={() => toggleDeviceMute(out)} />
             </div>
           </div>
         )}

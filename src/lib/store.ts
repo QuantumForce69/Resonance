@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import { send, sendHeadset, setMicHotkey } from "./api";
-import type { Command, Device, HeadsetCommand, HeadsetState, MicConfig, UiState } from "./types";
+import type { App, Command, Device, HeadsetCommand, HeadsetState, MicConfig, UiState } from "./types";
 
 export interface Toast {
   id: number;
@@ -53,6 +53,10 @@ async function attempt(action: () => Promise<unknown>): Promise<boolean> {
 
 /** Sends an audio command; failures become toasts. */
 export const run = (cmd: Command) => attempt(() => send(cmd));
+
+export const toggleDeviceMute = (d: Device) => run({ type: "setDeviceMute", id: d.id, muted: !d.muted });
+export const toggleAppMute = (a: App) => run({ type: "setAppMute", key: a.key, muted: !a.muted });
+export const toggleMicMute = (mic: Device) => run({ type: "setMicMute", muted: !mic.muted });
 
 /** Sends a headphone command; failures become toasts. */
 export const runHeadset = (cmd: HeadsetCommand) => attempt(() => sendHeadset(cmd));

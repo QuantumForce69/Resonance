@@ -51,7 +51,6 @@ export function HeadphonesView() {
     return <div className="grid h-full place-items-center text-[13px] text-dim">Connecting to the headphones…</div>;
   }
   const connected = isConnected(headset);
-  const off = !connected;
   const name = headset.name ?? "Soundcore Space One";
   const eq = headset.eq;
 
@@ -76,10 +75,10 @@ export function HeadphonesView() {
             label="Noise control"
             value={headset.ambientMode ?? "normal"}
             options={AMBIENT_OPTIONS}
-            disabled={off || !headset.ambientMode}
+            disabled={!connected || !headset.ambientMode}
             onChange={(mode) => runHeadset({ type: "setAmbientMode", mode })}
           />
-          {headset.ambientMode === "noiseCanceling" && <NoiseCancelling headset={headset} disabled={off} />}
+          {headset.ambientMode === "noiseCanceling" && <NoiseCancelling headset={headset} disabled={!connected} />}
           {headset.ambientMode === "transparency" && headset.transparency !== null && (
             <div>
               <div className="mb-2 text-[13px] text-fog">Transparency strength</div>
@@ -87,7 +86,7 @@ export function HeadphonesView() {
                 label="Transparency strength"
                 value={headset.transparency}
                 options={LEVEL_OPTIONS}
-                disabled={off}
+                disabled={!connected}
                 onChange={(level) => runHeadset({ type: "setTransparency", level })}
               />
             </div>
@@ -101,7 +100,7 @@ export function HeadphonesView() {
               <Toggle
                 label="Reduce wind noise"
                 checked={headset.windNoise}
-                disabled={off}
+                disabled={!connected}
                 onChange={(enabled) => runHeadset({ type: "setWindNoise", enabled })}
               />
             </div>
@@ -137,7 +136,7 @@ export function HeadphonesView() {
               aria-label="EQ preset"
               className="field-select"
               value={eq.preset ?? ""}
-              disabled={off}
+              disabled={!connected}
               onChange={(e) => e.currentTarget.value && runHeadset({ type: "setEqPreset", preset: e.currentTarget.value })}
             >
               {eq.preset === null && <option value="">Custom</option>}
@@ -148,7 +147,7 @@ export function HeadphonesView() {
               ))}
             </select>
           </div>
-          <EqFaders eq={eq} disabled={off} onChange={(values) => runHeadset({ type: "setEqBands", values })} />
+          <EqFaders eq={eq} disabled={!connected} onChange={(values) => runHeadset({ type: "setEqBands", values })} />
         </section>
       )}
     </div>

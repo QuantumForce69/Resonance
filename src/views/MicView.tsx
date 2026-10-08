@@ -1,5 +1,5 @@
 import { Mic, MicOff } from "lucide-react";
-import { defaultMic, run, saveMicConfig } from "../lib/store";
+import { defaultMic, run, saveMicConfig, toggleMicMute } from "../lib/store";
 import type { UiState } from "../lib/types";
 import { BoostKnob } from "../components/BoostKnob";
 import { DbScale } from "../components/DbScale";
@@ -34,7 +34,7 @@ export function MicView({ state }: { state: UiState }) {
               type="button"
               aria-pressed={mic.muted}
               aria-label={live ? "Mute microphone" : "Unmute microphone"}
-              onClick={() => run({ type: "setMicMute", muted: live })}
+              onClick={() => toggleMicMute(mic)}
               className={`grid h-16 w-16 shrink-0 place-items-center rounded-xl border ${live ? "mic-live text-lilac" : "mic-muted text-coral"}`}
             >
               {live ? <Mic size={26} strokeWidth={1.8} /> : <MicOff size={26} strokeWidth={1.8} />}

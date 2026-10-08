@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Eye, EyeOff, Mic, Pencil, Phone, Speaker, Star } from "lucide-react";
 import { formatDb } from "../lib/levels";
-import { run } from "../lib/store";
+import { run, toggleDeviceMute } from "../lib/store";
 import type { Device, UiState } from "../lib/types";
 import { MuteButton } from "../components/MuteButton";
 import { Slider } from "../components/Slider";
@@ -51,7 +51,7 @@ function DeviceRow({ device: d }: { device: Device }) {
       </div>
       {active && (
         <div className="flex w-64 items-center gap-2.5">
-          <MuteButton kind={d.flow === "capture" ? "mic" : "speaker"} muted={d.muted} label={d.name} onToggle={() => run({ type: "setDeviceMute", id: d.id, muted: !d.muted })} />
+          <MuteButton kind={d.flow === "capture" ? "mic" : "speaker"} muted={d.muted} label={d.name} onToggle={() => toggleDeviceMute(d)} />
           <Slider value={d.volume} label={`${d.name} volume`} onChange={(v) => run({ type: "setDeviceVolume", id: d.id, volume: v })} />
           <span className="num w-16 text-right text-[12px] text-fog">{formatDb(d.volume)}</span>
         </div>

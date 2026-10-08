@@ -1,5 +1,5 @@
 import { formatDb } from "../lib/levels";
-import { run } from "../lib/store";
+import { run, toggleAppMute } from "../lib/store";
 import type { App } from "../lib/types";
 import { AppIcon } from "./AppIcon";
 import { Meter } from "./Meter";
@@ -18,7 +18,7 @@ export function AppRow({ app }: { app: App }) {
         <Slider value={app.volume} label={`${app.name} volume`} onChange={(v) => run({ type: "setAppVolume", key: app.key, volume: v })} />
         <Meter source={`app:${app.key}`} className="h-[3px]!" />
       </div>
-      <MuteButton muted={app.muted} label={app.name} onToggle={() => run({ type: "setAppMute", key: app.key, muted: !app.muted })} />
+      <MuteButton muted={app.muted} label={app.name} onToggle={() => toggleAppMute(app)} />
     </div>
   );
 }

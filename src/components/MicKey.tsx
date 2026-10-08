@@ -1,4 +1,4 @@
-import { run } from "../lib/store";
+import { toggleMicMute } from "../lib/store";
 import type { Device } from "../lib/types";
 import { Meter } from "./Meter";
 import { Keycaps } from "./ui";
@@ -13,7 +13,7 @@ export function MicKey({ mic, hotkey, size = "compact" }: { mic: Device | undefi
       type="button"
       aria-pressed={mic.muted}
       aria-label={live ? "Microphone is live. Mute microphone" : "Microphone is muted. Unmute microphone"}
-      onClick={() => run({ type: "setMicMute", muted: live })}
+      onClick={() => toggleMicMute(mic)}
       className={`flex items-center gap-2.5 rounded-lg border text-[12px] transition-colors ${
         size === "wide" ? "w-full px-3 py-2.5 text-left" : "h-8 px-3"
       } ${live ? "mic-live" : "mic-muted"}`}

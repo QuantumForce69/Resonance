@@ -1,5 +1,5 @@
 import { formatDb } from "../lib/levels";
-import { run } from "../lib/store";
+import { run, toggleAppMute } from "../lib/store";
 import type { App } from "../lib/types";
 import { AppIcon } from "../components/AppIcon";
 import { DbScale } from "../components/DbScale";
@@ -28,7 +28,7 @@ export function ChannelStrip({ app }: { app: App }) {
       </div>
       <div className={`num text-center text-[13px] ${app.muted ? "text-coral" : "text-fog"}`}>{app.muted ? "Muted" : formatDb(app.volume)}</div>
       <div className="flex justify-center">
-        <MuteButton variant="key" muted={app.muted} label={app.name} onToggle={() => run({ type: "setAppMute", key: app.key, muted: !app.muted })} />
+        <MuteButton variant="key" muted={app.muted} label={app.name} onToggle={() => toggleAppMute(app)} />
       </div>
       {app.isSystem ? <div className="py-1.5 text-center text-[11px] text-dim">Follows default</div> : <DeviceSelect app={app} />}
     </section>

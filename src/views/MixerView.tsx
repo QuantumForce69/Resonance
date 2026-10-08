@@ -1,6 +1,6 @@
 import { ChevronDown } from "lucide-react";
 import { formatDb } from "../lib/levels";
-import { defaultOutput, outputs, run } from "../lib/store";
+import { defaultOutput, outputs, run, toggleDeviceMute } from "../lib/store";
 import type { UiState } from "../lib/types";
 import { DbScale } from "../components/DbScale";
 import { Meter } from "../components/Meter";
@@ -71,7 +71,7 @@ export function MixerView({ state }: { state: UiState }) {
               <div className={`num text-center text-[22px] font-medium tracking-[-0.02em] ${out.muted ? "text-coral" : ""}`}>
                 {out.muted ? "Muted" : formatDb(out.volume)}
               </div>
-              <MuteButton variant="key" muted={out.muted} label={out.name} className="w-full" onToggle={() => run({ type: "setDeviceMute", id: out.id, muted: !out.muted })} />
+              <MuteButton variant="key" muted={out.muted} label={out.name} className="w-full" onToggle={() => toggleDeviceMute(out)} />
             </>
           )}
         </section>
