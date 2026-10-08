@@ -13,6 +13,7 @@
     "windows": [
       {
         "label": "main",
+        "create": false,
         "title": "Resonance",
         "url": "index.html",
         "width": 1120,
@@ -23,10 +24,12 @@
         "decorations": false,
         "transparent": true,
         "visible": false,
-        "windowEffects": { "effects": ["mica"] }
+        "windowEffects": { "effects": ["mica"] },
+        "additionalBrowserArgs": "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection --disable-gpu"
       },
       {
         "label": "flyout",
+        "create": false,
         "title": "Resonance",
         "url": "index.html?view=flyout",
         "width": 380,
@@ -37,7 +40,8 @@
         "resizable": false,
         "skipTaskbar": true,
         "alwaysOnTop": true,
-        "windowEffects": { "effects": ["acrylic"] }
+        "windowEffects": { "effects": ["acrylic"] },
+        "additionalBrowserArgs": "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection --disable-gpu"
       }
     ],
     "security": { "csp": null }

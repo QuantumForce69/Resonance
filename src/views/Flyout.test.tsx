@@ -9,7 +9,7 @@ vi.mock("../lib/api", () => ({
   getAppIcon: vi.fn().mockResolvedValue(null),
   showMain: vi.fn().mockResolvedValue(undefined),
 }));
-vi.mock("@tauri-apps/api/window", () => ({ getCurrentWindow: () => ({ hide: vi.fn() }) }));
+vi.mock("@tauri-apps/api/window", () => ({ getCurrentWindow: () => ({ hide: vi.fn(), close: vi.fn().mockResolvedValue(undefined) }) }));
 
 describe("Flyout", () => {
   it("tags the mic key while processing is running", () => {

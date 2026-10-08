@@ -20,7 +20,7 @@ export function Flyout() {
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") getCurrentWindow().hide();
+      if (e.key === "Escape") void getCurrentWindow().close();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);

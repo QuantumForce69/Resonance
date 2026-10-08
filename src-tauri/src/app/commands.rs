@@ -1,6 +1,6 @@
 use std::{collections::HashMap, sync::Mutex};
 
-use tauri::{AppHandle, Manager, State};
+use tauri::{AppHandle, State};
 
 use super::{
     hotkeys,
@@ -54,9 +54,7 @@ pub fn take_notices(notices: State<'_, Notices>) -> Vec<AudioError> {
 
 #[tauri::command]
 pub fn show_main(app: AppHandle) {
-    if let Some(f) = app.get_webview_window("flyout") {
-        let _ = f.hide();
-    }
+    wnd::close_flyout(&app);
     wnd::show_main(&app);
 }
 

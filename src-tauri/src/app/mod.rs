@@ -83,12 +83,15 @@ pub fn run() {
         ])
         .build(tauri::generate_context!())
         .expect("error while building Resonance")
-        .run(|app, event| {
-            if let tauri::RunEvent::Exit = event {
+        .run(|app, event| match event {
+            // Windows are closed whenever they leave the screen; Resonance lives on in the tray.
+            tauri::RunEvent::ExitRequested { code: None, api, .. } => api.prevent_exit(),
+            tauri::RunEvent::Exit => {
                 // Stop the engine and give Windows its default mics back before the process ends.
                 if let Some(worker) = app.try_state::<worker::WorkerHandle>() {
                     worker.shutdown_and_wait(std::time::Duration::from_secs(3));
                 }
             }
+            _ => {}
         });
 }
