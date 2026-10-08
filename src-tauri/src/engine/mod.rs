@@ -4,6 +4,7 @@ pub mod drift;
 pub mod dsp;
 pub mod feed;
 pub mod fifo;
+pub mod source;
 
 pub use config::{
     CallSettings, CompressorParams, DenoiseParams, DspParams, EngineStatus, GateParams, LimiterParams, ProcessingSettings,
