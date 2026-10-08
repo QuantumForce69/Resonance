@@ -1,5 +1,5 @@
 use super::{compressor::Compressor, denoise::Denoiser, gate::Gate, limiter::Limiter, peak, FRAME};
-use crate::engine::config::DspParams;
+use crate::engine::config::{DspParams, LimiterParams};
 
 /// The processing chain, in its fixed order: noise suppression → gate → compressor → limiter.
 pub struct Chain {
@@ -8,6 +8,7 @@ pub struct Chain {
     gate: Gate,
     compressor: Compressor,
     limiter: Limiter,
+    safety: Limiter,
 }
 
 impl Chain {
@@ -18,6 +19,7 @@ impl Chain {
             gate: Gate::new(&p.gate),
             compressor: Compressor::new(&p.compressor),
             limiter: Limiter::new(&p.limiter),
+            safety: Limiter::new(&LimiterParams::default()),
         }
     }
 
@@ -30,8 +32,8 @@ impl Chain {
         self.p = *p;
     }
 
-    /// Processes one block in place; returns its peak before and after.
-    pub fn process(&mut self, frame: &mut [f32; FRAME]) -> (f32, f32) {
+    /// The voice path: noise suppression, gate and compressor. Returns the block's peak before processing.
+    pub fn voice(&mut self, frame: &mut [f32; FRAME]) -> f32 {
         let before = peak(frame);
         if self.p.denoise.enabled {
             self.denoise.process(frame);
@@ -42,10 +44,38 @@ impl Chain {
         if self.p.compressor.enabled {
             self.compressor.process(frame);
         }
+        before
+    }
+
+    /// Adds the call bus (if any) and limits. With apps mixed in and the limiter stage off, a fixed −1 dBFS
+    /// safety limiter still protects the call. Returns the block's peak after.
+    pub fn finish(&mut self, frame: &mut [f32; FRAME], apps: Option<&[f32; FRAME]>) -> f32 {
+        if let Some(apps) = apps {
+            for (x, a) in frame.iter_mut().zip(apps) {
+                *x += a;
+            }
+        }
         if self.p.limiter.enabled {
             self.limiter.process(frame);
+        } else if apps.is_some() {
+            self.safety.process(frame);
         }
-        (before, peak(frame))
+        peak(frame)
+    }
+
+    /// The voice level that counts as talking, for ducking: the gate threshold, or −45 dBFS without a gate.
+    pub fn duck_threshold_db(&self) -> f32 {
+        if self.p.gate.enabled {
+            self.p.gate.threshold_db
+        } else {
+            -45.0
+        }
+    }
+
+    /// Voice path and limiter with no apps; returns the peaks before and after.
+    pub fn process(&mut self, frame: &mut [f32; FRAME]) -> (f32, f32) {
+        let before = self.voice(frame);
+        (before, self.finish(frame, None))
     }
 }
 
@@ -133,5 +163,30 @@ mod tests {
         let loud: Vec<f32> = sine(180.0, 0.0, 1.0).iter().zip(fan_noise(-30.0, 1.0)).map(|(s, n)| s + n).collect();
         let out = run(&mut Chain::new(&DspParams::default()), &loud);
         assert!(crate::engine::dsp::peak(&out) <= db_to_lin(-1.0) + 1e-6);
+    }
+
+    #[test]
+    fn apps_are_added_after_the_voice_path_and_limited() {
+        let mut p = all_off();
+        p.gate.enabled = true;
+        p.gate.threshold_db = -10.0; // gate shuts the quiet "mic"
+        let mut chain = Chain::new(&p);
+        let apps = [0.9f32; FRAME];
+        let mut out = 0.0;
+        for _ in 0..20 {
+            let mut frame = [0.001f32; FRAME];
+            chain.voice(&mut frame);
+            out = chain.finish(&mut frame, Some(&apps));
+        }
+        // The gate didn't touch the apps; the safety limiter held them at −1 dBFS.
+        assert!((out - db_to_lin(-1.0)).abs() < 0.01, "{out}");
+    }
+
+    #[test]
+    fn without_apps_and_limiter_nothing_is_limited() {
+        let mut chain = Chain::new(&all_off());
+        let mut frame = [0.99f32; FRAME];
+        chain.voice(&mut frame);
+        assert_eq!(chain.finish(&mut frame, None), 0.99);
     }
 }
