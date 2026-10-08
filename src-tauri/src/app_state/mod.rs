@@ -5,6 +5,9 @@ mod processing;
 #[cfg(test)]
 mod processing_tests;
 mod call;
+mod profiles;
+#[cfg(test)]
+mod profiles_tests;
 #[cfg(test)]
 mod call_tests;
 
@@ -19,6 +22,7 @@ use crate::{
     engine::{AudioEngine, NullEngine},
     error::{AudioError, Result},
     model::*,
+    profile::AppOutput,
     settings::{AppPrefs, Settings},
 };
 
@@ -32,6 +36,8 @@ pub struct AppCore<B: AudioBackend> {
     engine: Box<dyn AudioEngine>,
     engine_state: processing::ProcState,
     notices: Vec<AudioError>,
+    /// Saved outputs for apps a profile wanted routed while they weren't playing.
+    pending_outputs: HashMap<String, AppOutput>,
 }
 
 fn clamp01(v: f32) -> Result<f32> {
@@ -59,6 +65,7 @@ let mut core = Self {
             engine: Box::new(NullEngine),
             engine_state: Default::default(),
             notices: Vec::new(),
+            pending_outputs: HashMap::new(),
         };
         core.state.processing = core.processing_view();
         core
@@ -132,6 +139,19 @@ let mut core = Self {
                     applied |= self.backend.set_session_mute(&s.id, p.muted).is_ok();
                 }
             }
+        }
+        let fresh: Vec<(String, u32)> =
+            sessions.iter().filter(|s| !self.seen_sessions.contains(&s.id)).map(|s| (app_key(s), s.pid)).collect();
+        let mut routed = Vec::new();
+        for (key, pid) in fresh {
+            if let Some(output) = self.pending_outputs.get(&key).cloned() {
+                self.route_app(&key, &[pid], &output);
+                routed.push(key);
+                applied = true;
+            }
+        }
+        for key in routed {
+            self.pending_outputs.remove(&key);
         }
         self.seen_sessions = sessions.iter().map(|s| s.id.clone()).collect();
         applied
@@ -336,13 +356,11 @@ let mut core = Self {
                 self.settings_dirty = true;
             }
             Command::SetAppSend { key, level } => self.set_app_send(&key, level)?,
-            Command::SaveProfile { .. }
-            | Command::UpdateProfile { .. }
-            | Command::RenameProfile { .. }
-            | Command::DeleteProfile { .. }
-            | Command::ApplyProfile { .. } => {
-                return Err(AudioError::Unavailable("Profiles aren't available yet".into()));
-            }
+            Command::SaveProfile { name, parts, headset } => self.save_profile(&name, parts, headset)?,
+            Command::UpdateProfile { id, headset } => self.update_profile(&id, headset)?,
+            Command::RenameProfile { id, name } => self.rename_profile(&id, &name)?,
+            Command::DeleteProfile { id } => self.delete_profile(&id)?,
+            Command::ApplyProfile { id } => self.apply_profile(&id)?,
             Command::SetProcessing { processing } => {
                 let mut p = processing;
                 p.dsp = p.dsp.clamped();
