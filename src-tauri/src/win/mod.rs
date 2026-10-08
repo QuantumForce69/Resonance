@@ -9,6 +9,7 @@ pub mod meter;
 mod policy;
 mod procinfo;
 mod shell;
+pub mod startup;
 pub mod routing;
 mod watcher;
 mod util;

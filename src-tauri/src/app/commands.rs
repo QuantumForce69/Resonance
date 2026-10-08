@@ -1,7 +1,6 @@
 use std::{collections::HashMap, sync::Mutex};
 
 use tauri::{AppHandle, Manager, State};
-use tauri_plugin_autostart::ManagerExt;
 
 use super::{
     hotkeys,
@@ -130,13 +129,15 @@ pub async fn apply_profile(
 }
 
 #[tauri::command]
-pub fn get_autostart(app: AppHandle) -> Result<bool> {
-    app.autolaunch().is_enabled().map_err(|e| AudioError::Os(e.to_string()))
+pub fn get_autostart() -> Result<bool> {
+    crate::win::startup::is_enabled()
 }
 
 #[tauri::command]
-pub fn set_autostart(app: AppHandle, enabled: bool) -> Result<()> {
-    let launcher = app.autolaunch();
-    let result = if enabled { launcher.enable() } else { launcher.disable() };
-    result.map_err(|e| AudioError::Os(e.to_string()))
+pub fn set_autostart(enabled: bool) -> Result<()> {
+    if enabled {
+        crate::win::startup::enable()
+    } else {
+        crate::win::startup::disable()
+    }
 }

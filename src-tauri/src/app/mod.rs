@@ -14,13 +14,12 @@ pub fn run() {
     let settings_path = paths::settings_path();
     let initial = Settings::load(&settings_path);
     // Set by the Start with Windows entry: stay in the tray whatever "Start in the tray" says.
-    let launched_minimized = std::env::args().any(|a| a == "--minimized");
+    let launched_minimized = std::env::args().any(|a| a == crate::win::startup::MINIMIZED_ARG);
     tracing::info!("Resonance starting");
 
     tauri::Builder::default()
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| wnd::show_main(app)))
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
-        .plugin(tauri_plugin_autostart::init(tauri_plugin_autostart::MacosLauncher::LaunchAgent, Some(vec!["--minimized"])))
         .manage(commands::IconCache::default())
         .manage(sink::Notices::default())
         .setup(move |app| {
@@ -47,17 +46,11 @@ pub fn run() {
                 }
             });
             tray::create(&handle)?;
-            // Keep the Start with Windows entry pointing at this installed copy: an entry made by another copy
-            // (a development build, an older install elsewhere) would start that one instead.
+            // Keep Start with Windows pointing at this installed copy (and move older versions' registry entry
+            // to a Startup-folder shortcut). Development builds leave it alone.
             #[cfg(not(debug_assertions))]
-            {
-                use tauri_plugin_autostart::ManagerExt;
-                let launcher = handle.autolaunch();
-                if launcher.is_enabled().unwrap_or(false) {
-                    if let Err(e) = launcher.enable() {
-                        tracing::warn!("couldn't refresh the start-up entry: {e}");
-                    }
-                }
+            if let Err(e) = crate::win::startup::refresh() {
+                tracing::warn!("couldn't refresh Start with Windows: {e}");
             }
             if let Err(e) = hotkeys::apply(&handle, &initial.mic) {
                 tracing::warn!("{e}");

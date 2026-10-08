@@ -1915,3 +1915,8 @@ Tell the user what was built and verified, what to try, and offer to merge to `m
   re-pointing it at themselves; debug builds never touch it.
 - Live check: welcome completed in the dev app, Profiles tab save/delete with confirmation, Settings switch shows the
   real state.
+- **Startup folder instead of the Run key (after release):** on the user's PC Windows started every enabled Run entry
+  at sign-in except Resonance's (valid value, approved, nothing blocked, nothing logged). Start with Windows is now a
+  `Resonance.lnk` shortcut in `shell:startup` (`win/startup.rs`, IShellLinkW); `tauri-plugin-autostart` was
+  removed. Release builds call `startup::refresh()` on launch, which moves the old Run entry to the shortcut and keeps
+  the shortcut pointing at the running executable.

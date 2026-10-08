@@ -55,10 +55,12 @@ A profile can't be saved with no parts. The Headphones part can only be ticked w
 
 ## 6. Start with Windows
 
-- Settings tab switch "Start with Windows", backed by `tauri-plugin-autostart` 2 (registry Run entry under the
-  current user), launched with `--minimized`.
+- Settings tab switch "Start with Windows": a `Resonance.lnk` shortcut in the user's Startup folder
+  (`shell:startup`) that runs Resonance with `--minimized`. (First built with `tauri-plugin-autostart`'s registry
+  Run entry, which Windows skipped at sign-in on the user's PC; release builds migrate that entry to the shortcut.)
 - Launched with `--minimized`, Resonance stays in the tray regardless of the "Start minimised" setting.
-- The switch reads the real state from the plugin (so it matches Windows' Startup apps page).
+- The switch reads the real state (whether the shortcut exists). Release builds re-point an existing shortcut at
+  themselves on launch.
 
 ## 7. First-run setup
 
