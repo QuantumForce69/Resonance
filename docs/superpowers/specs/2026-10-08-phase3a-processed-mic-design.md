@@ -83,6 +83,8 @@ src-tauri/src/
   plus the device buffer); a PI controller adjusts that output's resampling ratio by at most ±0.5 % to hold the level,
   so latency stays bounded with no over/underrun clicks. Simulated against ±0.3 % clock skew it holds the queue within
   ±4 ms with no underruns.
+- **As built:** each output's cushion adapts (20 ms, +5 ms per real dropout, max 50 ms) because real devices
+  jitter by ~20 ms; see the plan's execution notes.
 - **Latency:** about 40 ms mic-to-cable (10 ms capture period, 10 ms RNNoise framing delay, 1.5 ms limiter
   look-ahead, ~20 ms output queue).
 - **Integration with Phase 1:** the audio worker's `AppCore` owns the engine (behind the `AudioEngine` trait) and

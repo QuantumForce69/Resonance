@@ -1,8 +1,14 @@
 # Resonance
 
-A modern Windows audio control centre: per-app volume and output routing, device management,
-microphone control with global hotkeys — with Soundcore Space One control and a Voicemeeter-style
-engine coming in later phases (see `docs/superpowers/specs/`).
+A modern Windows audio control centre:
+
+- per-app volume and output routing, device management
+- microphone control with global hotkeys
+- Soundcore Space One control (noise cancelling, EQ, battery)
+- a processed microphone: AI noise suppression, gate, compressor and limiter on your mic, delivered to every
+  app through the free [VB-Cable](https://vb-audio.com/Cable/) driver, with optional monitoring
+
+Stream mixes and profiles come in later phases (see `docs/superpowers/specs/`).
 
 ## Develop
 

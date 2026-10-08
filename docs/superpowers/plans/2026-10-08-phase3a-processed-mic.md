@@ -4113,3 +4113,17 @@ git commit -m "docs: Phase 3a checklist and README"
 - [ ] **Step 7: Hand-off**
 
 Tell the user: install the new installer and VB-Cable (restart after), then walk the Phase 3a checklist; mention any hardware tests still pending. Offer to merge to `main`.
+
+---
+
+## Execution notes (2026-10-08)
+
+Deviations found while building, all committed:
+
+- **VB-Cable names:** Pack45 installs "CABLE Input", "CABLE In 16ch" and briefly showed "Speakers (VB-Audio Virtual Cable)". `find_cable` accepts any playback endpoint ending "(VB-Audio Virtual Cable)", preferring "CABLE Input", then a non-16-channel one (test `recognises_newer_vb_cable_names`).
+- **Installing VB-Cable makes it the Windows default playback and recording device.** The user's mic was put back by hand; speakers are the user's choice.
+- **Output cushion is adaptive:** measured on real hardware, the mic's packets and the audio engine's pulls jitter by ~20 ms, so a fixed 20 ms queue ran dry. Playback now starts after the first captured audio; each real dry-out grows that output's target by 5 ms (max 50 ms) and rebuilds it at once with silence ahead of the next audio; queues over 60 ms are trimmed (`Feed::{grow_target, discard}`, `Fifo::discard`). 60 s run: 2 start-up gaps, 2 more while settling, none after.
+- **Hardware test** also checks audio reaches CABLE Output and counts dropouts only after a 1 s warm-up.
+- **Shutdown** refreshes once more before saving, so last-moment changes are kept.
+- Clippy 1.99 wants `as_chunks_mut` instead of `chunks_exact_mut` with constant sizes.
+- UI polish after a live look: knob focus ring only for keyboard focus; stage cards keep their own heights.

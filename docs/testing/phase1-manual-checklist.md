@@ -45,3 +45,19 @@ Run with `npm.cmd run tauri dev` (or the installed build). Tick each item.
 - [ ] Pressing the headphones' own ANC button updates Resonance within about a second.
 - [ ] Turning the headphones off shows "Not connected, retrying…"; turning them on reconnects without clicking Retry.
 - [ ] The tray flyout strip shows battery and switches mode.
+
+## Phase 3a — Processed mic (needs VB-Cable from https://vb-audio.com/Cable/)
+
+- [ ] Without VB-Cable: Microphone page shows the install message; "Get VB-Cable" opens the download page; everything else works.
+- [ ] Turn Processing on: Windows Sound settings show "CABLE Output" as default and communications mic; the flyout mic key shows "Processed".
+- [ ] Discord/Teams voice test with "Default" input: voice is clear, fan/keyboard noise suppressed, no echo, no crackle over 10 minutes.
+- [ ] Gate: silence between words is quiet; raising the threshold cuts more; Advanced Hold/Release behave.
+- [ ] Compressor: loud and soft speech end up closer in level; Amount 0 vs 100 is clearly different; Auto makeup toggles.
+- [ ] Limiter: shouting never clips in a recording (Audacity on CABLE Output).
+- [ ] Monitoring: "Hear yourself" plays the processed mic in the headphones; level slider works; off by default.
+- [ ] Mute key/shortcut mutes what apps hear while processing is on.
+- [ ] Unplug the source mic: status shows "Paused" with a reason; plug it back in: processing resumes within a few seconds.
+- [ ] Turn Processing off: the previous default and communications mics come back.
+- [ ] Quit from the tray while processing: previous mics come back; relaunch: processing turns itself back on.
+- [ ] Kill Resonance in Task Manager while processing, relaunch, turn Processing off: the original mics come back.
+- [ ] Change the default mic in Windows while processing is on, then turn Processing off: your manual choice is kept.
