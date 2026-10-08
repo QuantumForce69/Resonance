@@ -52,8 +52,10 @@ pub fn take_notices(notices: State<'_, Notices>) -> Vec<AudioError> {
     notices.0.lock().map(|mut n| std::mem::take(&mut *n)).unwrap_or_default()
 }
 
+/// Async on purpose: it may create the main window, and on Windows building a window from a synchronous
+/// command deadlocks (the command runs inside a WebView2 callback on the main thread).
 #[tauri::command]
-pub fn show_main(app: AppHandle) {
+pub async fn show_main(app: AppHandle) {
     wnd::close_flyout(&app);
     wnd::show_main(&app);
 }
