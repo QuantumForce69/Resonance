@@ -47,6 +47,18 @@ pub fn run() {
                 }
             });
             tray::create(&handle)?;
+            // Keep the Start with Windows entry pointing at this installed copy: an entry made by another copy
+            // (a development build, an older install elsewhere) would start that one instead.
+            #[cfg(not(debug_assertions))]
+            {
+                use tauri_plugin_autostart::ManagerExt;
+                let launcher = handle.autolaunch();
+                if launcher.is_enabled().unwrap_or(false) {
+                    if let Err(e) = launcher.enable() {
+                        tracing::warn!("couldn't refresh the start-up entry: {e}");
+                    }
+                }
+            }
             if let Err(e) = hotkeys::apply(&handle, &initial.mic) {
                 tracing::warn!("{e}");
                 sink::push_notice(&handle, AudioError::Invalid(e));

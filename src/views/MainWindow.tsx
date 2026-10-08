@@ -5,6 +5,7 @@ import { DevicesView } from "./DevicesView";
 import { HeadphonesView } from "./HeadphonesView";
 import { MicView } from "./MicView";
 import { MixerView } from "./MixerView";
+import { Onboarding } from "./Onboarding";
 import { ProfilesView } from "./ProfilesView";
 import { SettingsView } from "./SettingsView";
 import { Titlebar, type View } from "./Titlebar";
@@ -33,6 +34,7 @@ export function MainWindow() {
           <SettingsView state={state} />
         )}
       </main>
+      {state && !state.ui.onboarded && <Onboarding state={state} />}
       <Toasts />
     </div>
   );
