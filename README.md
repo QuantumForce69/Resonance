@@ -11,6 +11,9 @@ a call mix and headphone control, all from one window or the tray.
 ![Built with Tauri 2](https://img.shields.io/badge/Tauri-2-24C8DB?logo=tauri&logoColor=white)
 ![Rust](https://img.shields.io/badge/Rust-stable-CE422B?logo=rust&logoColor=white)
 ![Licence: GPL-3.0](https://img.shields.io/badge/licence-GPL--3.0-blue)
+[![Latest release](https://img.shields.io/github/v/release/QuantumForce69/Resonance)](https://github.com/QuantumForce69/Resonance/releases/latest)
+
+**[⬇ Download for Windows](https://github.com/QuantumForce69/Resonance/releases/latest)**
 
 <img src="docs/images/mixer.png" width="820" alt="The Resonance mixer: a fader, meter, mute and call send for every app playing audio, beside the master output">
 
@@ -86,8 +89,8 @@ audio. The audio thread runs at "Pro Audio" priority and never allocates memory.
 
 ## Install
 
-1. Build the installer (see below), or use one you've been given.
-2. Run `Resonance_0.1.0_x64-setup.exe`. The installer isn't code-signed, so Windows SmartScreen may warn you:
+1. Download `Resonance_0.1.0_x64-setup.exe` from the [latest release](https://github.com/QuantumForce69/Resonance/releases/latest).
+2. Run it. The installer isn't code-signed, so Windows SmartScreen may warn you:
    choose **More info → Run anyway**.
 3. Follow the first-run setup. Resonance lives in the tray; left-click it for the flyout, right-click for the menu.
 
