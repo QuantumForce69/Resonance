@@ -46,12 +46,14 @@ pub fn run() {
                 }
             });
             tray::create(&handle)?;
-            // Keep Start with Windows pointing at this installed copy (and move older versions' registry entry
-            // to a Startup-folder shortcut). Development builds leave it alone.
+            // Keep Start with Windows pointing at this installed copy, off the main thread so the window
+            // isn't delayed. Development builds leave it alone.
             #[cfg(not(debug_assertions))]
-            if let Err(e) = crate::win::startup::refresh() {
-                tracing::warn!("couldn't refresh Start with Windows: {e}");
-            }
+            std::thread::spawn(|| {
+                if let Err(e) = crate::win::startup::refresh() {
+                    tracing::warn!("couldn't refresh Start with Windows: {e}");
+                }
+            });
             if let Err(e) = hotkeys::apply(&handle, &initial.mic) {
                 tracing::warn!("{e}");
                 sink::push_notice(&handle, AudioError::Invalid(e));

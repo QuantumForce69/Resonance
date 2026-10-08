@@ -1,6 +1,8 @@
 use std::{collections::HashMap, ffi::c_void};
 
 use windows::core::{w, HSTRING, PCWSTR, PWSTR};
+
+use super::util::text_until_nul;
 use windows::Win32::{
     Foundation::{CloseHandle, ERROR_INVALID_PARAMETER},
     Storage::FileSystem::{GetFileVersionInfoSizeW, GetFileVersionInfoW, VerQueryValueW},
@@ -71,13 +73,6 @@ pub fn file_description(path: &str) -> Option<String> {
     }
 }
 
-/// Decodes a version-resource string up to its first NUL. Some executables (e.g. Spotify) report a
-/// length that runs past the terminator into the next resource entry, so the length can't be trusted.
-fn text_until_nul(raw: &[u16]) -> Option<String> {
-    let end = raw.iter().position(|&c| c == 0).unwrap_or(raw.len());
-    let s = String::from_utf16_lossy(&raw[..end]).trim().to_string();
-    (!s.is_empty()).then_some(s)
-}
 
 
 /// Parent PID of every running process (from a ToolHelp snapshot); empty if the snapshot fails.

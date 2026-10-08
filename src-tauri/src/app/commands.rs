@@ -128,12 +128,12 @@ pub async fn apply_profile(
     Ok(())
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn get_autostart() -> Result<bool> {
     crate::win::startup::is_enabled()
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub fn set_autostart(enabled: bool) -> Result<()> {
     if enabled {
         crate::win::startup::enable()

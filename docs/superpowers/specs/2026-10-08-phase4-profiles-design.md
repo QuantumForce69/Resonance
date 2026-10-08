@@ -25,7 +25,7 @@ exporting profiles; per-profile mic hotkey settings.
 ## 3. Approach
 
 Profiles are partial snapshots stored in `settings.json` and applied through the same code paths the existing
-controls use (`AppCore` for audio, the headset manager for the Space One, the autostart plugin for start-up).
+controls use (`AppCore` for audio, the headset manager for the Space One, `win/startup.rs` for start-up).
 Rejected: swapping whole settings files (no partial profiles, can't drive the headphones, clobbers unrelated
 preferences); one file per profile (no benefit).
 
