@@ -35,40 +35,60 @@ export function readLevel(source: string): number {
   return latest.get(source) ?? 0;
 }
 
-interface Registration {
+export interface Meter {
   source: string;
   vertical: boolean;
   fill: HTMLElement;
   peak: HTMLElement;
   state: MeterState;
+  /** What was last written to the page, so unchanged frames cost nothing. */
+  painted: string;
 }
 
-const registrations = new Set<Registration>();
+/** Meter data arrives at 30 Hz; animating faster than 60 fps (e.g. on a 240 Hz monitor) only burns CPU. */
+const FRAME_MS = 1000 / 60;
+
+const meters = new Set<Meter>();
 let raf = 0;
+let lastFrame = -Infinity;
+
+export function createMeter(source: string, vertical: boolean, fill: HTMLElement, peak: HTMLElement): Meter {
+  return { source, vertical, fill, peak, state: { level: 0, peak: 0, peakAt: 0 }, painted: "" };
+}
+
+/** Advances one meter and writes to the page only if what it shows changed (0.1% steps). */
+export function paintMeter(m: Meter, now: number): boolean {
+  m.state = stepMeter(m.state, peakToPosition(readLevel(m.source)), now);
+  const lv = Math.round(m.state.level * 1000) / 10;
+  const pk = Math.round(m.state.peak * 1000) / 10;
+  const key = `${lv}|${pk}`;
+  if (key === m.painted) return false;
+  m.painted = key;
+  m.peak.style.opacity = pk > 1 ? "0.8" : "0";
+  if (m.vertical) {
+    m.fill.style.clipPath = `inset(${100 - lv}% 0 0 0)`;
+    m.peak.style.bottom = `${pk}%`;
+  } else {
+    m.fill.style.clipPath = `inset(0 ${100 - lv}% 0 0)`;
+    m.peak.style.left = `calc(${pk}% - 1px)`;
+  }
+  return true;
+}
 
 function tick(now: number) {
-  for (const r of registrations) {
-    r.state = stepMeter(r.state, peakToPosition(readLevel(r.source)), now);
-    const lv = r.state.level * 100;
-    const pk = r.state.peak * 100;
-    r.peak.style.opacity = pk > 1 ? "0.8" : "0";
-    if (r.vertical) {
-      r.fill.style.clipPath = `inset(${100 - lv}% 0 0 0)`;
-      r.peak.style.bottom = `${pk}%`;
-    } else {
-      r.fill.style.clipPath = `inset(0 ${100 - lv}% 0 0)`;
-      r.peak.style.left = `calc(${pk}% - 1px)`;
-    }
+  if (now - lastFrame >= FRAME_MS - 1) {
+    lastFrame = now;
+    for (const m of meters) paintMeter(m, now);
   }
-  raf = registrations.size ? requestAnimationFrame(tick) : 0;
+  raf = meters.size ? requestAnimationFrame(tick) : 0;
 }
 
 /** Drives a meter's DOM directly (no React renders). Returns an unregister function. */
 export function registerMeter(source: string, vertical: boolean, fill: HTMLElement, peak: HTMLElement): () => void {
-  const r: Registration = { source, vertical, fill, peak, state: { level: 0, peak: 0, peakAt: 0 } };
-  registrations.add(r);
+  const r = createMeter(source, vertical, fill, peak);
+  meters.add(r);
   if (!raf) raf = requestAnimationFrame(tick);
   return () => {
-    registrations.delete(r);
+    meters.delete(r);
   };
 }
