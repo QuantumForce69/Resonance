@@ -1,7 +1,7 @@
 import { create } from "zustand";
-import { send, sendHeadset, setMicHotkey } from "./api";
+import { applyProfile, saveProfile, send, sendHeadset, setMicHotkey, updateProfile } from "./api";
 import { DEFAULT_SEND, ECHO_WARNING, isCallApp } from "./processing";
-import type { App, Command, Device, HeadsetCommand, HeadsetState, MicConfig, ProcessingSettings, UiState } from "./types";
+import type { App, Command, Device, HeadsetCommand, HeadsetState, MicConfig, PartChoice, ProcessingSettings, UiSettings, UiState } from "./types";
 
 export interface Toast {
   id: number;
@@ -66,6 +66,13 @@ export function toggleAppSend(app: App) {
   if (app.send === null && isCallApp(app)) useStore.getState().pushToast("info", ECHO_WARNING);
   return setAppSend(app, app.send === null ? DEFAULT_SEND : null);
 }
+
+export const saveProfileAs = (name: string, parts: PartChoice) => attempt(() => saveProfile(name, parts));
+export const recaptureProfile = (id: string) => attempt(() => updateProfile(id));
+export const switchProfile = (id: string) => attempt(() => applyProfile(id));
+export const renameProfile = (id: string, name: string) => run({ type: "renameProfile", id, name });
+export const deleteProfile = (id: string) => run({ type: "deleteProfile", id });
+export const finishOnboarding = (ui: UiSettings) => run({ type: "setUiSettings", ui: { ...ui, onboarded: true } });
 
 /** Sends a headphone command; failures become toasts. */
 export const runHeadset = (cmd: HeadsetCommand) => attempt(() => sendHeadset(cmd));

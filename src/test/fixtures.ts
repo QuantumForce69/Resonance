@@ -1,4 +1,4 @@
-import type { App, Device, DspParams, ProcessingView, UiState } from "../lib/types";
+import type { App, Device, DspParams, ProcessingView, Profile, UiState } from "../lib/types";
 
 export function makeDevice(p: Partial<Device> & { id: string }): Device {
   return {
@@ -49,6 +49,14 @@ export function makeProcessing(p: Partial<ProcessingView> = {}): ProcessingView 
   };
 }
 
+export function makeProfile(p: Partial<Profile> & { id: string }): Profile {
+  return {
+    name: `Profile ${p.id}`,
+    parts: { apps: {}, processing: null, headphones: null, defaultOutput: null },
+    ...p,
+  };
+}
+
 export function makeState(p: Partial<UiState> = {}): UiState {
   return {
     devices: [
@@ -63,8 +71,10 @@ export function makeState(p: Partial<UiState> = {}): UiState {
     ],
     routingAvailable: true,
     mic: { hotkey: "Ctrl+Shift+M", mode: "toggle" },
-    ui: { theme: "system", startMinimized: false },
+    ui: { theme: "system", startMinimized: false, onboarded: true },
     processing: makeProcessing(),
+    profiles: [],
+    activeProfile: null,
     ...p,
   };
 }

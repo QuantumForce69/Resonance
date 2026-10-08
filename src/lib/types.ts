@@ -47,6 +47,7 @@ export interface MicConfig {
 export interface UiSettings {
   theme: Theme;
   startMinimized: boolean;
+  onboarded: boolean;
 }
 
 export interface DenoiseParams {
@@ -115,6 +116,49 @@ export interface ProcessingView {
   callAvailable: boolean;
 }
 
+export type AppOutput = { kind: "unknown" } | { kind: "default" } | { kind: "device"; id: string };
+
+export interface AppSnapshot {
+  volume: number;
+  muted: boolean;
+  output: AppOutput;
+}
+
+export interface HeadsetPart {
+  ambientMode: AmbientMode | null;
+  ncMode: NcMode | null;
+  manualNc: number | null;
+  transparency: number | null;
+  windNoise: boolean | null;
+  eqPreset: string | null;
+  eqBands: number[] | null;
+}
+
+export interface ProcessingPart {
+  settings: ProcessingSettings;
+  callSends: Record<string, number>;
+}
+
+export interface ProfileParts {
+  apps: Record<string, AppSnapshot> | null;
+  processing: ProcessingPart | null;
+  headphones: HeadsetPart | null;
+  defaultOutput: string | null;
+}
+
+export interface PartChoice {
+  apps: boolean;
+  processing: boolean;
+  headphones: boolean;
+  defaultOutput: boolean;
+}
+
+export interface Profile {
+  id: string;
+  name: string;
+  parts: ProfileParts;
+}
+
 export interface UiState {
   devices: Device[];
   apps: App[];
@@ -122,6 +166,8 @@ export interface UiState {
   mic: MicConfig;
   ui: UiSettings;
   processing: ProcessingView;
+  profiles: Profile[];
+  activeProfile: string | null;
 }
 
 export interface MeterFrame {
@@ -148,7 +194,9 @@ export type Command =
   | { type: "setUiSettings"; ui: UiSettings }
   | { type: "resetAppMemory" }
   | { type: "setProcessing"; processing: ProcessingSettings }
-  | { type: "setAppSend"; key: string; level: number | null };
+  | { type: "setAppSend"; key: string; level: number | null }
+  | { type: "renameProfile"; id: string; name: string }
+  | { type: "deleteProfile"; id: string };
 
 export interface CmdError {
   code: "notFound" | "unavailable" | "invalid" | "os";
