@@ -1,5 +1,6 @@
 import { run } from "../lib/store";
 import type { Theme, UiState } from "../lib/types";
+import { StartWithWindows } from "../components/StartWithWindows";
 import { Field, Panel, Segmented, Toggle, ViewHeader } from "../components/ui";
 
 const THEMES: { value: Theme; label: string }[] = [
@@ -16,6 +17,9 @@ export function SettingsView({ state }: { state: UiState }) {
       <Panel className="px-6 py-1.5">
         <Field label="Theme">
           <Segmented label="Theme" value={ui.theme} options={THEMES} onChange={(theme) => run({ type: "setUiSettings", ui: { ...ui, theme } })} />
+        </Field>
+        <Field label="Start with Windows" hint="Resonance starts in the tray when you sign in">
+          <StartWithWindows />
         </Field>
         <Field label="Start in the tray" hint="Only show the tray icon when Resonance launches">
           <Toggle label="Start in the tray" checked={ui.startMinimized} onChange={(startMinimized) => run({ type: "setUiSettings", ui: { ...ui, startMinimized } })} />

@@ -11,6 +11,7 @@ import { DbScale } from "../components/DbScale";
 import { Meter } from "../components/Meter";
 import { MicKey } from "../components/MicKey";
 import { MuteButton } from "../components/MuteButton";
+import { ProfileBar } from "../components/ProfileBar";
 import { Slider } from "../components/Slider";
 import { Toasts } from "../components/Toasts";
 
@@ -33,6 +34,8 @@ export function Flyout() {
 
   return (
     <div className="flex h-full flex-col overflow-hidden rounded-xl border border-groove bg-night">
+      <ProfileBar state={state} />
+
       <section aria-label="Master output" className="border-b border-groove bg-linear-to-b from-raised to-console px-[18px] pt-[18px] pb-4">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
