@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 use crate::{
     engine::{ProcessingSettings, RestoreDefaults},
     model::{MicConfig, UiSettings},
+    profile::Profile,
 };
 
 pub const SETTINGS_VERSION: u32 = 1;
@@ -42,6 +43,9 @@ pub struct Settings {
     pub processing_restore: Option<RestoreDefaults>,
     /// Apps sent into calls: app key → send level (0..1).
     pub call_sends: BTreeMap<String, f32>,
+    pub profiles: Vec<Profile>,
+    /// The profile applied (or saved) last; highlighted, not re-applied on start-up.
+    pub active_profile: Option<String>,
 }
 
 impl Default for Settings {
@@ -55,6 +59,8 @@ impl Default for Settings {
             processing: ProcessingSettings::default(),
             processing_restore: None,
             call_sends: BTreeMap::new(),
+            profiles: Vec::new(),
+            active_profile: None,
         }
     }
 }
@@ -118,6 +124,8 @@ mod tests {
         s.processing.dsp.gate.threshold_db = -50.0;
         s.processing_restore = Some(RestoreDefaults { console: Some("mic1".into()), comms: None });
         s.call_sends.insert("spotify.exe".into(), 0.5);
+        s.profiles.push(Profile { id: "p1".into(), name: "Gaming".into(), parts: Default::default() });
+        s.active_profile = Some("p1".into());
         s.save(&path).unwrap();
         assert_eq!(Settings::load(&path), s);
         let text = std::fs::read_to_string(&path).unwrap();

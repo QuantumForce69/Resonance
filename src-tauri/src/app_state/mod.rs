@@ -184,6 +184,8 @@ let mut core = Self {
             mic: self.settings.mic.clone(),
             ui: self.settings.ui.clone(),
             processing: self.state.processing.clone(),
+            profiles: self.settings.profiles.clone(),
+            active_profile: self.settings.active_profile.clone(),
         }
     }
 
@@ -334,6 +336,13 @@ let mut core = Self {
                 self.settings_dirty = true;
             }
             Command::SetAppSend { key, level } => self.set_app_send(&key, level)?,
+            Command::SaveProfile { .. }
+            | Command::UpdateProfile { .. }
+            | Command::RenameProfile { .. }
+            | Command::DeleteProfile { .. }
+            | Command::ApplyProfile { .. } => {
+                return Err(AudioError::Unavailable("Profiles aren't available yet".into()));
+            }
             Command::SetProcessing { processing } => {
                 let mut p = processing;
                 p.dsp = p.dsp.clamped();

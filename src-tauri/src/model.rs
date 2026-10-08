@@ -2,7 +2,11 @@ use std::collections::HashMap;
 
 use serde::{Deserialize, Serialize};
 
-use crate::engine::{ProcessingSettings, ProcessingView};
+use crate::{
+    engine::{ProcessingSettings, ProcessingView},
+    headset::part::HeadsetPart,
+    profile::{PartChoice, Profile},
+};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -148,6 +152,8 @@ pub enum Theme {
 pub struct UiSettings {
     pub theme: Theme,
     pub start_minimized: bool,
+    /// The first-run setup has been finished or skipped.
+    pub onboarded: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Default, Serialize)]
@@ -159,6 +165,8 @@ pub struct UiState {
     pub mic: MicConfig,
     pub ui: UiSettings,
     pub processing: ProcessingView,
+    pub profiles: Vec<Profile>,
+    pub active_profile: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Default, Serialize)]
@@ -192,6 +200,11 @@ pub enum Command {
     ResetAppMemory,
     SetProcessing { processing: ProcessingSettings },
     SetAppSend { key: String, level: Option<f32> },
+    SaveProfile { name: String, parts: PartChoice, headset: Option<HeadsetPart> },
+    UpdateProfile { id: String, headset: Option<HeadsetPart> },
+    RenameProfile { id: String, name: String },
+    DeleteProfile { id: String },
+    ApplyProfile { id: String },
 }
 
 #[cfg(test)]
@@ -234,6 +247,19 @@ mod tests {
 
         let c: Command = serde_json::from_str(r#"{"type":"setAppSend","key":"spotify.exe","level":null}"#).unwrap();
         assert_eq!(c, Command::SetAppSend { key: "spotify.exe".into(), level: None });
+
+        let c: Command = serde_json::from_str(
+            r#"{"type":"saveProfile","name":"Gaming","parts":{"apps":true,"defaultOutput":true},"headset":null}"#,
+        )
+        .unwrap();
+        assert_eq!(
+            c,
+            Command::SaveProfile {
+                name: "Gaming".into(),
+                parts: PartChoice { apps: true, default_output: true, ..Default::default() },
+                headset: None
+            }
+        );
     }
 
     #[test]
@@ -245,6 +271,8 @@ mod tests {
         assert_eq!(v["mic"]["hotkey"], "Ctrl+Shift+M");
         assert_eq!(v["mic"]["mode"], "toggle");
         assert_eq!(v["processing"]["status"]["state"], "off");
+        assert_eq!(v["ui"]["onboarded"], false);
+        assert!(v["activeProfile"].is_null());
     }
 
     #[test]

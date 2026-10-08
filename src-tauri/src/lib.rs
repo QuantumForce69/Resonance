@@ -8,6 +8,7 @@ pub mod headset;
 mod fake;
 pub mod model;
 pub mod paths;
+pub mod profile;
 pub mod settings;
 #[cfg(windows)]
 pub mod win;
