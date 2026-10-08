@@ -24,7 +24,7 @@ pub fn run() {
             let handle = app.handle().clone();
             let worker = worker::spawn(
                 crate::win::WasapiBackend::new,
-                Box::new(crate::engine::NullEngine),
+                Box::new(crate::win::WasapiEngine::new()),
                 settings_path.clone(),
                 sink::TauriSink { app: handle.clone() },
             );
@@ -63,7 +63,16 @@ pub fn run() {
             commands::show_main,
             commands::headset_command,
             commands::get_headset,
+            commands::open_vb_cable,
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running Resonance");
+        .build(tauri::generate_context!())
+        .expect("error while building Resonance")
+        .run(|app, event| {
+            if let tauri::RunEvent::Exit = event {
+                // Stop the engine and give Windows its default mics back before the process ends.
+                if let Some(worker) = app.try_state::<worker::WorkerHandle>() {
+                    worker.shutdown_and_wait(std::time::Duration::from_secs(3));
+                }
+            }
+        });
 }

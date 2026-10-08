@@ -27,7 +27,7 @@ pub fn create(app: &AppHandle) -> tauri::Result<()> {
             "open" => wnd::show_main(app),
             "mute" => app.state::<WorkerHandle>().send(Command::ToggleMicMute),
             "quit" => {
-                app.state::<WorkerHandle>().shutdown();
+                app.state::<WorkerHandle>().shutdown_and_wait(std::time::Duration::from_secs(3));
                 app.exit(0);
             }
             _ => {}

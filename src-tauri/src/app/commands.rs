@@ -66,3 +66,11 @@ pub async fn headset_command(
 pub async fn get_headset(headset: State<'_, crate::headset::HeadsetHandle>) -> Result<crate::headset::model::HeadsetState> {
     headset.state().await
 }
+
+/// VB-Cable's download page (the only URL this command opens).
+const VB_CABLE_URL: &str = "https://vb-audio.com/Cable/";
+
+#[tauri::command]
+pub fn open_vb_cable() {
+    crate::win::open_url(VB_CABLE_URL);
+}
