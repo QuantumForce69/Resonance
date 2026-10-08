@@ -18,6 +18,14 @@ impl DriftController {
         Self { target: target_frames as f64, level: None, integral: 0.0 }
     }
 
+    pub fn target(&self) -> usize {
+        self.target as usize
+    }
+
+    pub fn set_target(&mut self, frames: usize) {
+        self.target = frames as f64;
+    }
+
     /// Takes the frames currently queued for the device; returns the ratio to use next.
     pub fn update(&mut self, queued: usize) -> f64 {
         let q = queued as f64;

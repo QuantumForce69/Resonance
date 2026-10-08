@@ -4,6 +4,10 @@ use super::{drift::DriftController, dsp::FRAME, fifo::Fifo};
 
 /// Frames kept queued for an output (its queue plus the device buffer): 20 ms rides out scheduling jitter.
 pub const TARGET_QUEUE: usize = 960;
+/// The most cushion an output may grow to (50 ms).
+pub const MAX_TARGET: usize = 2400;
+/// How much the cushion grows each time the device runs dry (5 ms).
+const TARGET_STEP: usize = 240;
 /// How far the resampling ratio may ever move from 1 (the drift controller stays within ±0.5 %).
 const MAX_RATIO_RELATIVE: f64 = 1.1;
 
@@ -42,6 +46,21 @@ impl Feed {
     /// Takes up to `out.len()` queued frames.
     pub fn pull(&mut self, out: &mut [f32]) -> usize {
         self.fifo.pop_into(out)
+    }
+
+    /// Frames this output aims to keep queued (its queue plus the device buffer).
+    pub fn target(&self) -> usize {
+        self.drift.target()
+    }
+
+    /// Keeps a bigger cushion from now on (after the device ran dry), up to `MAX_TARGET`.
+    pub fn grow_target(&mut self) {
+        self.drift.set_target((self.drift.target() + TARGET_STEP).min(MAX_TARGET));
+    }
+
+    /// Drops the `n` oldest queued frames (used when the queue has grown far past its target).
+    pub fn discard(&mut self, n: usize) {
+        self.fifo.discard(n);
     }
 
     /// Called once per cycle, after writing to the device, with the frames the device still holds.
@@ -98,6 +117,18 @@ mod tests {
             assert_eq!(underruns, 0, "skew {skew}");
             assert!(lo > TARGET_QUEUE - 240 && hi < TARGET_QUEUE + 240, "skew {skew}: {lo}..{hi}");
         }
+    }
+
+    #[test]
+    fn the_cushion_grows_up_to_a_limit() {
+        let mut feed = Feed::new();
+        assert_eq!(feed.target(), TARGET_QUEUE);
+        feed.grow_target();
+        assert_eq!(feed.target(), TARGET_QUEUE + TARGET_STEP);
+        for _ in 0..100 {
+            feed.grow_target();
+        }
+        assert_eq!(feed.target(), MAX_TARGET);
     }
 
     #[test]

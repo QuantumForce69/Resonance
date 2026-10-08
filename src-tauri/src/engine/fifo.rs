@@ -46,6 +46,13 @@ impl Fifo {
         }
     }
 
+    /// Drops up to `n` of the oldest samples.
+    pub fn discard(&mut self, n: usize) {
+        let n = n.min(self.len);
+        self.head = (self.head + n) % self.buf.len();
+        self.len -= n;
+    }
+
     /// Moves up to `out.len()` of the oldest samples into `out`; returns how many.
     pub fn pop_into(&mut self, out: &mut [f32]) -> usize {
         let n = out.len().min(self.len);
@@ -84,6 +91,18 @@ mod tests {
         let mut out = [0.0; 3];
         assert_eq!(f.pop_into(&mut out), 3);
         assert_eq!(out, [3.0, 4.0, 5.0]);
+    }
+
+    #[test]
+    fn discards_the_oldest() {
+        let mut f = Fifo::new(4);
+        f.push_slice(&[1.0, 2.0, 3.0, 4.0, 5.0]);
+        f.discard(2);
+        let mut out = [0.0; 4];
+        assert_eq!(f.pop_into(&mut out), 2);
+        assert_eq!(&out[..2], &[4.0, 5.0]);
+        f.discard(9);
+        assert!(f.is_empty());
     }
 
     #[test]

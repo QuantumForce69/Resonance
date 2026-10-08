@@ -4,8 +4,10 @@ use windows::Win32::{
     System::Com::{CoCreateInstance, StructuredStorage::PropVariantToStringAlloc, CLSCTX_ALL, STGM_READ},
 };
 
+use windows::core::HSTRING;
+
 use super::util::take_pwstr;
-use crate::error::Result;
+use crate::error::{AudioError, Result};
 
 pub fn create_enumerator() -> Result<IMMDeviceEnumerator> {
     unsafe { Ok(CoCreateInstance(&MMDeviceEnumerator, None, CLSCTX_ALL)?) }
@@ -29,4 +31,8 @@ pub fn default_id(e: &IMMDeviceEnumerator, flow: EDataFlow, role: ERole) -> Opti
 
 pub fn endpoint_volume(d: &IMMDevice) -> Result<IAudioEndpointVolume> {
     unsafe { Ok(d.Activate(CLSCTX_ALL, None)?) }
+}
+
+pub fn device_by_id(e: &IMMDeviceEnumerator, id: &str) -> Result<IMMDevice> {
+    unsafe { e.GetDevice(&HSTRING::from(id)).map_err(|_| AudioError::device_gone()) }
 }
