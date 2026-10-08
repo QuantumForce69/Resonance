@@ -15,7 +15,6 @@ import { Toasts } from "../components/Toasts";
 
 export function Flyout() {
   const state = useStore((s) => s.state);
-  const headset = useStore((s) => s.headset);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -66,7 +65,7 @@ export function Flyout() {
         )}
       </section>
 
-      {headset && <HeadsetStrip headset={headset} />}
+      <HeadsetStrip />
 
       <div className="border-b border-groove px-3.5 py-3">
         <MicKey mic={mic} hotkey={state.mic.hotkey} size="wide" />

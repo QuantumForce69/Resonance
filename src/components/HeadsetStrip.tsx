@@ -1,11 +1,12 @@
 import { AMBIENT_OPTIONS, connectionLabel, isConnected } from "../lib/headset";
-import { runHeadset } from "../lib/store";
-import type { HeadsetState } from "../lib/types";
+import { runHeadset, useStore } from "../lib/store";
 import { BatteryGauge } from "./BatteryGauge";
 import { LeverSwitch } from "./LeverSwitch";
 
 /** Tray-flyout strip: headphone name, battery and the ambient-mode lever. */
-export function HeadsetStrip({ headset }: { headset: HeadsetState }) {
+export function HeadsetStrip() {
+  const headset = useStore((s) => s.headset);
+  if (!headset) return null;
   const connected = isConnected(headset);
   return (
     <section aria-label="Headphones" className="border-b border-groove px-[18px] py-3">

@@ -1,5 +1,5 @@
 import { AMBIENT_OPTIONS, LEVEL_OPTIONS, connectionLabel, isConnected } from "../lib/headset";
-import { runHeadset } from "../lib/store";
+import { runHeadset, useStore } from "../lib/store";
 import type { HeadsetState, NcMode } from "../lib/types";
 import { BatteryGauge } from "../components/BatteryGauge";
 import { EqFaders } from "../components/EqFaders";
@@ -45,7 +45,8 @@ function NoiseCancelling({ headset, disabled }: { headset: HeadsetState; disable
   );
 }
 
-export function HeadphonesView({ headset }: { headset: HeadsetState | null }) {
+export function HeadphonesView() {
+  const headset = useStore((s) => s.headset);
   if (!headset) {
     return <div className="grid h-full place-items-center text-[13px] text-dim">Connecting to the headphones…</div>;
   }

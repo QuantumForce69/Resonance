@@ -11,7 +11,6 @@ import { Titlebar, type View } from "./Titlebar";
 export function MainWindow() {
   const [view, setView] = useState<View>("mixer");
   const state = useStore((s) => s.state);
-  const headset = useStore((s) => s.headset);
 
   return (
     <div className="flex h-full flex-col">
@@ -26,7 +25,7 @@ export function MainWindow() {
         ) : view === "mic" ? (
           <MicView state={state} />
         ) : view === "headphones" ? (
-          <HeadphonesView headset={headset} />
+          <HeadphonesView />
         ) : (
           <SettingsView state={state} />
         )}
