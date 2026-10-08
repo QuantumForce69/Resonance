@@ -190,3 +190,12 @@ fn the_view_says_whether_apps_can_be_sent() {
     c.refresh().unwrap();
     assert!(!c.state().processing.call_available);
 }
+
+#[test]
+fn resonance_itself_is_never_listed_or_sent() {
+    let mut b = backend();
+    b.sessions.push(FakeBackend::session("me", std::process::id(), Some("resonance.exe")));
+    let mut c = AppCore::new(b, Settings::default());
+    c.refresh().unwrap();
+    assert!(c.state().apps.iter().all(|a| a.key != "resonance.exe"));
+}

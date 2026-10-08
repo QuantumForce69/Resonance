@@ -1,9 +1,10 @@
-use std::ffi::c_void;
+use std::{collections::HashMap, ffi::c_void};
 
 use windows::core::{w, HSTRING, PCWSTR, PWSTR};
 use windows::Win32::{
     Foundation::{CloseHandle, ERROR_INVALID_PARAMETER},
     Storage::FileSystem::{GetFileVersionInfoSizeW, GetFileVersionInfoW, VerQueryValueW},
+    System::Diagnostics::ToolHelp::{CreateToolhelp32Snapshot, Process32FirstW, Process32NextW, PROCESSENTRY32W, TH32CS_SNAPPROCESS},
     System::Threading::{OpenProcess, QueryFullProcessImageNameW, PROCESS_NAME_WIN32, PROCESS_QUERY_LIMITED_INFORMATION},
 };
 
@@ -79,8 +80,34 @@ fn text_until_nul(raw: &[u16]) -> Option<String> {
 }
 
 
+/// Parent PID of every running process (from a ToolHelp snapshot); empty if the snapshot fails.
+pub fn parent_pids() -> HashMap<u32, u32> {
+    let mut map = HashMap::new();
+    unsafe {
+        let Ok(snapshot) = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0) else { return map };
+        let mut entry = PROCESSENTRY32W { dwSize: std::mem::size_of::<PROCESSENTRY32W>() as u32, ..Default::default() };
+        if Process32FirstW(snapshot, &mut entry).is_ok() {
+            loop {
+                map.insert(entry.th32ProcessID, entry.th32ParentProcessID);
+                if Process32NextW(snapshot, &mut entry).is_err() {
+                    break;
+                }
+            }
+        }
+        let _ = CloseHandle(snapshot);
+    }
+    map
+}
+
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn knows_this_process_and_its_parent() {
+        let parents = super::parent_pids();
+        let parent = parents.get(&std::process::id()).copied().expect("this process is listed");
+        assert_ne!(parent, 0);
+    }
+
     use super::*;
 
     fn wide(s: &str) -> Vec<u16> {

@@ -410,4 +410,8 @@ impl AudioBackend for WasapiBackend {
         self.mic_meter = None;
         self.mic_meter_failed = None;
     }
+
+    fn process_parents(&mut self) -> HashMap<u32, u32> {
+        super::procinfo::parent_pids()
+    }
 }

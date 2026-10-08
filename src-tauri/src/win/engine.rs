@@ -1,8 +1,9 @@
 use std::{
+    collections::HashMap,
     panic::{catch_unwind, AssertUnwindSafe},
     sync::{
         atomic::{AtomicBool, AtomicU32, Ordering},
-        mpsc, Arc, Mutex,
+        mpsc, Arc, Mutex, OnceLock,
     },
     thread::{self, JoinHandle},
     time::Duration,
@@ -22,12 +23,13 @@ use windows::Win32::{
     },
 };
 
-use super::{com::ComGuard, endpoints};
+use super::{com::ComGuard, endpoints, loopback::LoopbackCapture};
 use crate::{
     engine::{
-        dsp::{chain::Chain, FRAME},
+        dsp::{callbus::CallBus, chain::Chain, FRAME},
         feed::{Feed, TARGET_QUEUE},
         fifo::Fifo,
+        source::SourceQueue,
         AudioEngine, EngineParams, Route, SourceSpec,
     },
     error::{AudioError, Result},
@@ -46,10 +48,14 @@ const MAX_SILENT_WAITS: u32 = 4;
 const AUTOCONVERT: u32 = AUDCLNT_STREAMFLAGS_AUTOCONVERTPCM | AUDCLNT_STREAMFLAGS_SRC_DEFAULT_QUALITY;
 /// Above this many queued frames (60 ms) the oldest audio is dropped so latency can't build up.
 const MAX_QUEUE: usize = TARGET_QUEUE * 3;
+/// Most apps the call can hear at once (sources beyond this are ignored).
+const MAX_SOURCES: usize = 32;
+/// Largest loopback packet (100 ms) in frames.
+const SOURCE_SCRATCH: usize = 4800;
 /// AUDCLNT_E_DEVICE_INVALIDATED, as it appears in an error message.
 const DEVICE_GONE: &str = "0x88890004";
 
-fn float_format(channels: u16) -> WAVEFORMATEX {
+pub(super) fn float_format(channels: u16) -> WAVEFORMATEX {
     WAVEFORMATEX {
         wFormatTag: WAVE_FORMAT_IEEE_FLOAT,
         nChannels: channels,
@@ -62,10 +68,10 @@ fn float_format(channels: u16) -> WAVEFORMATEX {
 }
 
 /// An auto-reset Win32 event, closed on drop.
-struct Event(HANDLE);
+pub(super) struct Event(pub(super) HANDLE);
 
 impl Event {
-    fn new() -> Result<Self> {
+    pub(super) fn new() -> Result<Self> {
         unsafe { Ok(Event(CreateEventW(None, false, false, PCWSTR::null())?)) }
     }
 }
@@ -267,9 +273,27 @@ fn describe(e: &AudioError) -> String {
     }
 }
 
+/// What the audio worker tells the engine thread.
+enum Msg {
+    Params(EngineParams),
+    /// Start hearing a process (opened on the worker thread, so the engine never waits on Windows).
+    Add(Box<LiveSource>),
+    Remove(u32),
+    Level(u32, f32),
+}
+
+/// A sent process inside the engine.
+struct LiveSource {
+    pid: u32,
+    level: f32,
+    capture: LoopbackCapture,
+    queue: SourceQueue,
+    dead: bool,
+}
+
 struct Running {
     stop: Arc<AtomicBool>,
-    params: mpsc::Sender<EngineParams>,
+    msgs: mpsc::Sender<Msg>,
     thread: JoinHandle<()>,
     shared: Arc<Shared>,
 }
@@ -278,6 +302,9 @@ struct Running {
 #[derive(Default)]
 pub struct WasapiEngine {
     running: Option<Running>,
+    /// Processes the engine thread currently hears, with their levels.
+    open: HashMap<u32, f32>,
+    app_capture: OnceLock<bool>,
 }
 
 impl WasapiEngine {
@@ -294,9 +321,10 @@ impl WasapiEngine {
 impl AudioEngine for WasapiEngine {
     fn start(&mut self, route: &Route, params: &EngineParams) -> Result<()> {
         self.stop();
+        self.open.clear();
         let shared = Arc::new(Shared::default());
         let stop = Arc::new(AtomicBool::new(false));
-        let (params_tx, params_rx) = mpsc::channel();
+        let (params_tx, params_rx) = mpsc::channel::<Msg>();
         let (ready_tx, ready_rx) = mpsc::sync_channel(1);
         let thread = {
             let (route, params, shared, stop) = (route.clone(), *params, shared.clone(), stop.clone());
@@ -319,7 +347,7 @@ impl AudioEngine for WasapiEngine {
         };
         match ready_rx.recv_timeout(Duration::from_secs(3)) {
             Ok(Ok(())) => {
-                self.running = Some(Running { stop, params: params_tx, thread, shared });
+                self.running = Some(Running { stop, msgs: params_tx, thread, shared });
                 Ok(())
             }
             Ok(Err(e)) => {
@@ -339,11 +367,12 @@ impl AudioEngine for WasapiEngine {
             r.stop.store(true, Ordering::Release);
             let _ = r.thread.join();
         }
+        self.open.clear();
     }
 
     fn set_params(&mut self, params: &EngineParams) {
         if let Some(r) = &self.running {
-            let _ = r.params.send(*params);
+            let _ = r.msgs.send(Msg::Params(*params));
         }
     }
 
@@ -357,13 +386,42 @@ impl AudioEngine for WasapiEngine {
             .map_or((0.0, 0.0), |r| (take_peak(&r.shared.peak_in), take_peak(&r.shared.peak_out)))
     }
 
-    // Replaced in the next task by process-loopback capture.
-    fn set_sources(&mut self, _: &[SourceSpec]) -> Vec<AudioError> {
-        Vec::new()
+    fn set_sources(&mut self, sources: &[SourceSpec]) -> Vec<AudioError> {
+        let Some(running) = &self.running else {
+            self.open.clear();
+            return Vec::new();
+        };
+        let wanted: HashMap<u32, f32> = sources.iter().map(|s| (s.pid, s.level)).collect();
+        self.open.retain(|pid, _| {
+            let keep = wanted.contains_key(pid);
+            if !keep {
+                let _ = running.msgs.send(Msg::Remove(*pid));
+            }
+            keep
+        });
+        let mut problems = Vec::new();
+        for s in sources {
+            match self.open.get(&s.pid) {
+                Some(&level) if level == s.level => {}
+                Some(_) => {
+                    let _ = running.msgs.send(Msg::Level(s.pid, s.level));
+                    self.open.insert(s.pid, s.level);
+                }
+                None => match LoopbackCapture::open(s.pid) {
+                    Ok(capture) => {
+                        let source = LiveSource { pid: s.pid, level: s.level, capture, queue: SourceQueue::new(), dead: false };
+                        let _ = running.msgs.send(Msg::Add(Box::new(source)));
+                        self.open.insert(s.pid, s.level);
+                    }
+                    Err(e) => problems.push(AudioError::Unavailable(format!("Couldn't hear {} for the call: {e}", s.key))),
+                },
+            }
+        }
+        problems
     }
 
     fn supports_app_capture(&self) -> bool {
-        false
+        *self.app_capture.get_or_init(super::loopback::supported)
     }
 }
 
@@ -378,7 +436,7 @@ impl Drop for WasapiEngine {
 fn run(
     route: &Route,
     mut params: EngineParams,
-    params_rx: &mpsc::Receiver<EngineParams>,
+    msgs: &mpsc::Receiver<Msg>,
     stop: &AtomicBool,
     shared: &Shared,
     ready: &mpsc::SyncSender<Result<()>>,
@@ -400,6 +458,10 @@ fn run(
     let _mmcss = Mmcss::join();
     let _ = ready.try_send(Ok(()));
 
+    let mut sources: Vec<Box<LiveSource>> = Vec::with_capacity(MAX_SOURCES);
+    let mut source_scratch = vec![0.0f32; SOURCE_SCRATCH];
+    let mut app_block = [0.0f32; FRAME];
+    let mut call_bus = CallBus::new();
     let mut silent_waits = 0;
     let mut playing = false;
     while !stop.load(Ordering::Acquire) {
@@ -411,22 +473,52 @@ fn run(
             continue;
         }
         silent_waits = 0;
-        while let Ok(p) = params_rx.try_recv() {
-            if p.dsp != params.dsp {
-                chain.set(&p.dsp);
+        while let Ok(msg) = msgs.try_recv() {
+            match msg {
+                Msg::Params(p) => {
+                    if p.dsp != params.dsp {
+                        chain.set(&p.dsp);
+                    }
+                    params = p;
+                }
+                Msg::Add(source) => {
+                    if sources.len() < MAX_SOURCES {
+                        sources.push(source);
+                    }
+                }
+                // Dropping a source releases its capture here; removals are rare and short.
+                Msg::Remove(pid) => sources.retain(|s| s.pid != pid),
+                Msg::Level(pid, level) => {
+                    if let Some(s) = sources.iter_mut().find(|s| s.pid == pid) {
+                        s.level = level;
+                    }
+                }
             }
-            params = p;
         }
         capture.drain(&mut input)?;
+        for s in sources.iter_mut() {
+            // A process that went away just stops contributing; the mic keeps flowing.
+            if s.capture.drain(&mut s.queue, &mut source_scratch).is_err() {
+                s.dead = true;
+            }
+        }
+        sources.retain(|s| !s.dead);
         while input.len() >= FRAME {
             input.pop_into(&mut frame);
-            let (before, after) = chain.process(&mut frame);
-            store_peak(&shared.peak_in, before);
-            store_peak(&shared.peak_out, after);
-            cable_feed.push(&frame);
+            let before = chain.voice(&mut frame);
             if monitor.is_some() {
                 monitor_feed.push(&frame);
             }
+            call_bus.clear();
+            for s in sources.iter_mut() {
+                s.queue.pull(&mut app_block);
+                call_bus.add(&app_block, s.level);
+            }
+            let apps = call_bus.finish(&frame, &params.call, chain.duck_threshold_db());
+            let after = chain.finish(&mut frame, apps);
+            store_peak(&shared.peak_in, before);
+            store_peak(&shared.peak_out, after);
+            cable_feed.push(&frame);
         }
         if !playing {
             cable.start()?;

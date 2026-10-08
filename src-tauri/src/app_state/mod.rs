@@ -99,10 +99,19 @@ let mut core = Self {
         Ok(self.state != previous)
     }
 
-    fn read_state(&mut self) -> Result<UiState> {
+    /// The OS snapshot without Resonance's own sessions (its processed-mic and monitor streams): muting or
+    /// sending those would break calls, so they never appear as apps.
+    fn snapshot_without_self(&mut self) -> Result<Snapshot> {
+        let own = std::process::id();
         let mut snap = self.backend.snapshot()?;
+        snap.sessions.retain(|s| s.pid != own);
+        Ok(snap)
+    }
+
+    fn read_state(&mut self) -> Result<UiState> {
+        let mut snap = self.snapshot_without_self()?;
         if self.restore_new_sessions(&snap.sessions) {
-            snap = self.backend.snapshot()?;
+            snap = self.snapshot_without_self()?;
         }
         let apps = group_sessions(&snap.sessions);
         self.remember(&apps);
