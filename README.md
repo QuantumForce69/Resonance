@@ -69,8 +69,9 @@ interface, and it stays out of the way: in the tray it uses about **1 % of one C
 ### 🎛️ Stream Deck
 - A **Mic Mute** key for Elgato Stream Deck that shows the real state: green when you're live, red when muted,
   grey when Resonance isn't running. It stays in sync however you mute (keyboard shortcut, tray or profile).
-- Install it with `powershell -File streamdeck\install.ps1` (needs Rust), then drag **Resonance → Mic Mute**
-  onto a key. Companion apps talk to Resonance over the local pipe `\\.\pipe\resonance`
+- Download `Resonance-StreamDeck-plugin.zip` from the [latest release](https://github.com/QuantumForce69/Resonance/releases/latest),
+  extract it into `%APPDATA%\Elgato\StreamDeck\Plugins`, restart Stream Deck, then drag **Resonance → Mic Mute**
+  onto a key. (Or build it yourself with `powershell -File streamdeck\install.ps1`.) Companion apps talk to Resonance over the local pipe `\\.\pipe\resonance`
   ([protocol](src-tauri/src/app/control.rs)).
 
 ## Performance
@@ -96,7 +97,7 @@ audio. The audio thread runs at "Pro Audio" priority and never allocates memory.
 
 ## Install
 
-1. Download `Resonance_0.1.0_x64-setup.exe` from the [latest release](https://github.com/QuantumForce69/Resonance/releases/latest).
+1. Download the `Resonance_…_x64-setup.exe` installer from the [latest release](https://github.com/QuantumForce69/Resonance/releases/latest).
 2. Run it. The installer isn't code-signed, so Windows SmartScreen may warn you:
    choose **More info → Run anyway**.
 3. Follow the first-run setup. Resonance lives in the tray; left-click it for the flyout, right-click for the menu.
