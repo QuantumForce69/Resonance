@@ -1,0 +1,64 @@
+use async_trait::async_trait;
+use openscq30_lib_has::Has;
+use std::sync::Arc;
+use tokio::sync::watch;
+
+use crate::{
+    api::device,
+    devices::soundcore::common::{
+        packet::{self, PacketIOController},
+        state_modifier::StateModifier,
+        structures::LimitHighVolume,
+    },
+};
+
+pub struct LimitHighVolumeStateModifier {
+    packet_io: Arc<PacketIOController>,
+}
+
+impl LimitHighVolumeStateModifier {
+    pub fn new(packet_io: Arc<PacketIOController>) -> Self {
+        Self { packet_io }
+    }
+}
+
+#[async_trait]
+impl<T> StateModifier<T> for LimitHighVolumeStateModifier
+where
+    T: Has<LimitHighVolume> + Clone + Send + Sync,
+{
+    async fn move_to_state(
+        &self,
+        state_sender: &watch::Sender<T>,
+        target_state: &T,
+    ) -> device::Result<()> {
+        let target = target_state.get();
+        let current = *state_sender.borrow().get();
+
+        if current.enabled != target.enabled || current.db_limit != target.db_limit {
+            self.packet_io
+                .send_with_response(&packet::outbound::set_limit_high_volume(
+                    target.enabled,
+                    target.db_limit,
+                ))
+                .await?;
+            state_sender.send_modify(|state| {
+                state.get_mut().enabled = target.enabled;
+                state.get_mut().db_limit = target.db_limit;
+            });
+        }
+
+        if current.refresh_rate != target.refresh_rate {
+            self.packet_io
+                .send_with_response(&packet::outbound::set_limit_high_volume_refresh_rate(
+                    target.refresh_rate,
+                ))
+                .await?;
+            state_sender.send_modify(|state| {
+                state.get_mut().refresh_rate = target.refresh_rate;
+            });
+        }
+
+        Ok(())
+    }
+}

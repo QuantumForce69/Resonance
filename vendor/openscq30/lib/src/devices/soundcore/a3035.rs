@@ -1,0 +1,374 @@
+use std::collections::HashMap;
+
+use crate::devices::soundcore::{
+    a3035::{packets::inbound::A3035StateUpdatePacket, state::A3035State},
+    common::{
+        self,
+        macros::soundcore_device,
+        packet::{
+            inbound::TryToPacket,
+            outbound::{RequestState, ToPacket},
+        },
+    },
+};
+
+mod modules;
+mod packets;
+mod state;
+mod structures;
+
+soundcore_device!(
+    A3035State,
+    async |packet_io| {
+        let state_update_packet: A3035StateUpdatePacket = packet_io
+            .send_with_response(&RequestState.to_packet())
+            .await?
+            .try_to_packet()?;
+        let dual_connections_devices = if state_update_packet.dual_connections_enabled {
+            common::modules::dual_connections::take_dual_connection_devices(&packet_io).await?
+        } else {
+            Vec::new()
+        };
+        Ok(A3035State::new(
+            state_update_packet,
+            dual_connections_devices,
+        ))
+    },
+    async |builder| {
+        builder.module_collection().add_state_update();
+
+        builder.a3035_sound_modes();
+
+        builder.a3035_equalizer().await;
+
+        builder.a3035_button_configuration();
+        builder.ambient_sound_mode_cycle();
+
+        builder.limit_high_volume();
+
+        builder.dual_connections();
+
+        builder.ldac();
+        builder.auto_power_off(
+            common::modules::auto_power_off::AutoPowerOffDuration::half_hour_increments(),
+        );
+        builder.auto_play_pause();
+        builder.a3035_battery_alert();
+        builder.a3035_ambient_sound_mode_voice_prompt();
+
+        builder.single_battery_level(5);
+        builder.serial_number_and_firmware_version();
+    },
+    {
+        HashMap::from([(
+            RequestState::COMMAND,
+            A3035StateUpdatePacket::default().to_packet(),
+        )])
+    },
+);
+
+#[cfg(test)]
+mod tests {
+    use std::{collections::HashMap, time::Duration};
+
+    use crate::{
+        DeviceModel,
+        devices::soundcore::common::{
+            device::{SoundcoreDeviceConfig, test_utils::TestSoundcoreDevice},
+            packet::{self},
+        },
+        settings::{SettingId, Value},
+    };
+
+    #[tokio::test(start_paused = true)]
+    async fn test_with_known_good_packet() {
+        let device = TestSoundcoreDevice::new(
+            super::device_registry,
+            DeviceModel::SoundcoreA3035,
+            HashMap::from([(
+                packet::Command([1, 1]),
+                packet::Inbound::new(
+                    packet::Command([1, 1]),
+                    vec![
+                        5, 255, 48, 54, 46, 56, 55, 51, 48, 51, 53, 55, 48, 53, 48, 50, 56, 56, 65,
+                        57, 68, 70, 52, 0, 0, 120, 120, 120, 120, 120, 120, 120, 120, 120, 0, 30,
+                        255, 0, 255, 255, 255, 255, 255, 255, 255, 255, 255, 0, 0, 0, 0, 0, 0, 255,
+                        255, 255, 255, 255, 255, 255, 255, 255, 0, 0, 0, 4, 4, 7, 3, 0, 0x50, 0, 0,
+                        1, 5, 0, 1, 0, 0, 0, 49, 1, 0, 1, 0, 1, 2, 0, 90, 0, 1, 1, 0, 0, 0,
+                    ],
+                ),
+            )]),
+            SoundcoreDeviceConfig::default(),
+        )
+        .await;
+
+        device.assert_setting_values([
+            (SettingId::AmbientSoundMode, "NoiseCanceling".into()),
+            (SettingId::NoiseCancelingMode, "Custom".into()),
+            (SettingId::ManualNoiseCanceling, 5.into()),
+            (SettingId::ManualTransparency, 5.into()),
+            (SettingId::WindNoiseSuppression, true.into()),
+            (SettingId::LimitHighVolume, false.into()),
+            (SettingId::LimitHighVolumeDbLimit, 90.into()),
+            (SettingId::LimitHighVolumeRefreshRate, "RealTime".into()),
+            (SettingId::DoublePress, Some("BassUp").into()),
+            (SettingId::NoiseCancelingModeInCycle, true.into()),
+            (SettingId::TransparencyModeInCycle, true.into()),
+            (SettingId::NormalModeInCycle, false.into()),
+            (SettingId::AutoPowerOff, "90m".into()),
+            (SettingId::AutoPlayPause, true.into()),
+            (SettingId::LowBatteryPrompt, true.into()),
+            (SettingId::VoicePrompt, true.into()),
+            (
+                SettingId::PresetEqualizerProfile,
+                Some("SoundcoreSignature").into(),
+            ),
+            (
+                SettingId::VolumeAdjustments,
+                Value::I16Vec(vec![0, 0, 0, 0, 0, 0, 0, 0]),
+            ),
+            (SettingId::DualConnections, false.into()),
+        ]);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn set_preset_eq() {
+        let mut device = TestSoundcoreDevice::new(
+            super::device_registry,
+            DeviceModel::SoundcoreA3035,
+            HashMap::from([(
+                packet::Command([1, 1]),
+                packet::Inbound::new(
+                    packet::Command([1, 1]),
+                    vec![
+                        5, 255, 48, 54, 46, 56, 55, 51, 48, 51, 53, 55, 48, 53, 48, 50, 56, 56, 65,
+                        57, 68, 70, 52, 0, 0, 120, 120, 120, 120, 120, 120, 120, 120, 250,
+                        250, // band 9-10 changed to 250 so we can verify how they're handled
+                        30, 255, 0, 255, 255, 255, 255, 255, 255, 255, 255, 255, 0, 0, 0, 0, 0, 0,
+                        255, 255, 255, 255, 255, 255, 255, 255, 255, 0, 0, 0, 4, 4, 7, 3, 0, 0x50,
+                        0, 0, 1, 5, 0, 1, 0, 0, 0, 49, 1, 0, 1, 0, 1, 2, 0, 90, 0, 1, 1, 0, 0, 0,
+                    ],
+                ),
+            )]),
+            SoundcoreDeviceConfig::default(),
+        )
+        .await;
+
+        device
+            .assert_set_settings_response(
+                vec![(SettingId::PresetEqualizerProfile, "Acoustic".into())],
+                vec![packet::Outbound::new(
+                    packet::Command([3, 135]),
+                    vec![
+                        1, 0, 0, 0, 160, 130, 140, 140, 160, 160, 160, 140, 120, 0, 255, 255, 0,
+                        255, 255, 255, 255, 255, 255, 255, 255, 255, 0, 0, 0, 0, 0, 0, 255, 255,
+                        255, 255, 255, 255, 255, 255, 255, 0, 125, 118, 123, 120, 124, 122, 124,
+                        121, 120, 0, 0,
+                    ],
+                )],
+            )
+            .await;
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn set_custom_eq() {
+        let mut device = TestSoundcoreDevice::new(
+            super::device_registry,
+            DeviceModel::SoundcoreA3035,
+            HashMap::from([(
+                packet::Command([1, 1]),
+                packet::Inbound::new(
+                    packet::Command([1, 1]),
+                    vec![
+                        5, 255, 48, 54, 46, 56, 55, 51, 48, 51, 53, 55, 48, 53, 48, 50, 56, 56, 65,
+                        57, 68, 70, 52, 0, 0, 120, 120, 120, 120, 120, 120, 120, 120, 250,
+                        250, // band 9-10 changed to 250 so we can verify how they're handled
+                        30, 255, 0, 255, 255, 255, 255, 255, 255, 255, 255, 255, 0, 0, 0, 0, 0, 0,
+                        255, 255, 255, 255, 255, 255, 255, 255, 255, 0, 0, 0, 4, 4, 7, 3, 0, 0x50,
+                        0, 0, 1, 5, 0, 1, 0, 0, 0, 49, 1, 0, 1, 0, 1, 2, 0, 90, 0, 1, 1, 0, 0, 0,
+                    ],
+                ),
+            )]),
+            SoundcoreDeviceConfig::default(),
+        )
+        .await;
+
+        device
+            .assert_set_settings_response(
+                vec![(
+                    SettingId::VolumeAdjustments,
+                    Value::I16Vec(vec![-60, 0, 0, 0, 0, 0, 0, 60]),
+                )],
+                vec![packet::Outbound::new(
+                    packet::Command([3, 135]),
+                    vec![
+                        254, 254, 0, 0, 60, 120, 120, 120, 120, 120, 120, 180, 120, 120, 255, 255,
+                        0, 255, 255, 255, 255, 255, 255, 255, 255, 255, 0, 0, 0, 0, 0, 0, 255, 255,
+                        255, 255, 255, 255, 255, 255, 255, 0, 112, 124, 119, 121, 119, 121, 116,
+                        129, 120, 0, 0,
+                    ],
+                )],
+            )
+            .await;
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn set_custom_transparency() {
+        let mut device = TestSoundcoreDevice::new(
+            super::device_registry,
+            DeviceModel::SoundcoreA3035,
+            HashMap::from([(
+                packet::Command([1, 1]),
+                packet::Inbound::new(
+                    packet::Command([1, 1]),
+                    vec![
+                        5, 255, 48, 54, 46, 56, 55, 51, 48, 51, 53, 55, 48, 53, 48, 50, 56, 56, 65,
+                        57, 68, 70, 52, 0, 0, 120, 120, 120, 120, 120, 120, 120, 120, 120, 0, 30,
+                        255, 0, 255, 255, 255, 255, 255, 255, 255, 255, 255, 0, 0, 0, 0, 0, 0, 255,
+                        255, 255, 255, 255, 255, 255, 255, 255, 0, 0, 0, 4, 4, 7, 3, 0, 0x50, 0, 0,
+                        1, 5, 0, 1, 0, 0, 0, 49, 1, 0, 1, 0, 1, 2, 0, 90, 0, 1, 1, 0, 0, 0,
+                    ],
+                ),
+            )]),
+            SoundcoreDeviceConfig::default(),
+        )
+        .await;
+
+        device
+            .assert_set_settings_response(
+                vec![(SettingId::ManualTransparency, 3.into())],
+                vec![
+                    packet::Outbound::new(packet::Command([6, 129]), vec![1, 81, 0, 0, 1, 5]),
+                    packet::Outbound::new(packet::Command([6, 129]), vec![1, 81, 0, 0, 1, 3]),
+                    packet::Outbound::new(packet::Command([6, 129]), vec![0, 81, 0, 0, 1, 3]),
+                ],
+            )
+            .await;
+    }
+
+    /// A device in NoiseCanceling whose state packet reports `byte_2` in the unused sound modes byte.
+    async fn device_with_sound_modes_byte_2(byte_2: u8) -> TestSoundcoreDevice {
+        TestSoundcoreDevice::new(
+            super::device_registry,
+            DeviceModel::SoundcoreA3035,
+            HashMap::from([(
+                packet::Command([1, 1]),
+                packet::Inbound::new(
+                    packet::Command([1, 1]),
+                    vec![
+                        5, 255, 48, 54, 46, 56, 55, 51, 48, 51, 53, 55, 48, 53, 48, 50, 56, 56, 65,
+                        57, 68, 70, 52, 0, 0, 120, 120, 120, 120, 120, 120, 120, 120, 120, 0, 30,
+                        255, 0, 255, 255, 255, 255, 255, 255, 255, 255, 255, 0, 0, 0, 0, 0, 0, 255,
+                        255, 255, 255, 255, 255, 255, 255, 255, 0, 0, 0, 4, 4, 7, 3, 0, 0x50,
+                        byte_2, 0, 1, 5, 0, 1, 0, 0, 0, 49, 1, 0, 1, 0, 1, 2, 0, 90, 0, 1, 1, 0, 0,
+                        0,
+                    ],
+                ),
+            )]),
+            SoundcoreDeviceConfig::default(),
+        )
+        .await
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn sound_mode_writes_always_send_zero_in_byte_2() {
+        // A bad write can leave a nonzero value stored on the device; it must not be echoed back.
+        let mut device = device_with_sound_modes_byte_2(1).await;
+        for (mode, body) in [
+            ("Transparency", [1, 81, 0, 0, 1, 5]),
+            ("Normal", [2, 81, 0, 0, 1, 5]),
+        ] {
+            device
+                .assert_set_settings_response(
+                    vec![(SettingId::AmbientSoundMode, mode.into())],
+                    vec![packet::Outbound::new(
+                        packet::Command([6, 129]),
+                        body.to_vec(),
+                    )],
+                )
+                .await;
+        }
+    }
+
+    /// Feeds a [6,1] sound modes notification and reports whether a change notification fired.
+    async fn notify_sound_modes(device: &TestSoundcoreDevice, body: Vec<u8>) -> bool {
+        let mut changes = device.inner().watch_for_changes();
+        changes.mark_unchanged();
+        device
+            .send_inbound(&packet::Inbound::new(packet::Command([6, 1]), body))
+            .await;
+        tokio::time::timeout(Duration::from_secs(5), changes.changed())
+            .await
+            .is_ok()
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn sound_modes_notification_updates_state_and_notifies() {
+        let device = device_with_sound_modes_byte_2(0).await;
+        assert!(notify_sound_modes(&device, vec![1, 81, 0, 0, 1, 5]).await);
+        device.assert_setting_values([(SettingId::AmbientSoundMode, "Transparency".into())]);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn unchanged_sound_modes_notification_does_not_notify() {
+        let device = device_with_sound_modes_byte_2(0).await;
+        assert!(!notify_sound_modes(&device, vec![0, 80, 0, 0, 1, 5]).await);
+        device.assert_setting_values([(SettingId::AmbientSoundMode, "NoiseCanceling".into())]);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn realistic_dual_connections_devices() {
+        let device = TestSoundcoreDevice::new_with_delayed_responses(
+            super::device_registry,
+            DeviceModel::SoundcoreA3035,
+            HashMap::from([
+                (
+                    packet::Command([1, 1]),
+                    packet::Inbound::new(
+                        packet::Command([1, 1]),
+                        vec![
+                            5, 255, 48, 54, 46, 56, 55, 51, 48, 51, 53, 55, 48, 53, 48, 50, 56, 56,
+                            65, 57, 68, 70, 52, 0, 0, 120, 120, 120, 120, 120, 120, 120, 120, 120,
+                            0, 30, 255, 0, 255, 255, 255, 255, 255, 255, 255, 255, 255, 0, 0, 0, 0,
+                            0, 0, 255, 255, 255, 255, 255, 255, 255, 255, 255, 0, 0, 0, 4, 4, 7, 3,
+                            0, 0x50, 0, 0, 1, 5, 0, 1, 0, 0, 0, 49, 1, 1, 1, 0, 1, 2, 0, 90, 0, 1,
+                            1, 0, 0, 0,
+                        ],
+                    ),
+                ),
+                (
+                    packet::Command([0x0b, 0x01]),
+                    packet::Inbound::new(
+                        packet::Command([0x0b, 0x01]),
+                        vec![
+                            0x1, 0x1, // current/total
+                            0x28, 0x1, 0x66, 0x14, 0x92, 0x2c, 0x3a, 0xd4, 0x50, 0x69, 0x78, 0x65,
+                            0x6c, 0x20, 0x36, 0x61, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0,
+                            0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0,
+                            0x0, // device 1
+                            0x28, 0x1, 0x67, 0x14, 0x92, 0x2c, 0x3a, 0xd4, 0x50, 0x69, 0x78, 0x65,
+                            0x6c, 0x20, 0x37, 0x61, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0,
+                            0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0, 0x0,
+                            0x0, // device 2
+                        ],
+                    ),
+                ),
+            ]),
+            SoundcoreDeviceConfig::default(),
+            HashMap::from([(packet::Command([0x0b, 0x01]), Duration::from_millis(1500))]),
+        )
+        .await;
+
+        device.assert_setting_values([(SettingId::DualConnections, true.into())]);
+
+        let value = Value::from(
+            device
+                .inner()
+                .setting(&SettingId::DualConnectionsDevices)
+                .unwrap(),
+        );
+        let dual_connections_devices = value.try_into_string_vec().unwrap();
+
+        assert_eq!(dual_connections_devices.len(), 2);
+    }
+}

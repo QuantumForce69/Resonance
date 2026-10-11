@@ -1,0 +1,50 @@
+use std::sync::Arc;
+
+use openscq30_lib_has::Has;
+
+use crate::{
+    devices::soundcore::{
+        a3040,
+        common::{
+            modules::{ModuleCollection, flag::FlagConfiguration},
+            packet::{self, PacketIOController},
+        },
+    },
+    settings::{CategoryId, SettingId},
+};
+
+impl<T> ModuleCollection<T>
+where
+    T: Has<a3040::structures::LowBatteryPrompt> + Clone + Send + Sync,
+{
+    pub fn add_a3040_low_battery_prompt(&mut self, packet_io: Arc<PacketIOController>) {
+        self.add_flag(
+            packet_io,
+            FlagConfiguration {
+                category_id: CategoryId::Miscellaneous,
+                setting_id: SettingId::LowBatteryPrompt,
+                set_command: packet::Command([1, 175]),
+                update_command: None,
+                is_inverted: false,
+            },
+        );
+    }
+}
+
+impl<T> ModuleCollection<T>
+where
+    T: Has<a3040::structures::VoicePrompt> + Clone + Send + Sync,
+{
+    pub fn add_a3040_voice_prompt(&mut self, packet_io: Arc<PacketIOController>) {
+        self.add_flag(
+            packet_io,
+            FlagConfiguration {
+                category_id: CategoryId::Miscellaneous,
+                setting_id: SettingId::VoicePrompt,
+                set_command: packet::Command([1, 174]),
+                update_command: None,
+                is_inverted: false,
+            },
+        );
+    }
+}

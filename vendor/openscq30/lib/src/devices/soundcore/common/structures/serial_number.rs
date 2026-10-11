@@ -1,0 +1,64 @@
+use nom::{
+    IResult, Parser,
+    combinator::map_opt,
+    error::{ContextError, ParseError, context},
+};
+use std::fmt::Display;
+
+use crate::devices::soundcore::common::packet::parsing::take_str;
+
+#[derive(Debug, Clone, Hash, PartialEq, Eq, PartialOrd, Ord)]
+pub struct SerialNumber(String);
+
+impl SerialNumber {
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+
+    pub fn take<'a, E: ParseError<&'a [u8]> + ContextError<&'a [u8]>>(
+        input: &'a [u8],
+    ) -> IResult<&'a [u8], Self, E> {
+        context(
+            "serial number",
+            map_opt(take_str(16usize), |s| {
+                // Serial number for most devices is 4 digit model number followed by mac address with pairs in reverse
+                // order. ie. device model 1234 with max address 55:66:77:88:99:AA would be 1234AA9988776655
+                // The mac address is hex, and the model number is base 10 digits only, so if this applied to all devices,
+                // we would be able to use that to try to avoid parsing things that aren't serial numbers as one if this
+                // applied to all devices.
+                //
+                // HOWEVER:
+                // On newer devices, a counterexample has been found: a serial number starting with ACCR7L. So now we
+                // have a wider range of acceptable characters: all alphanumeric.
+                if s.chars().all(|c| c.is_ascii_alphanumeric()) {
+                    Some(Self::from(s))
+                } else {
+                    None
+                }
+            }),
+        )
+        .parse_complete(input)
+    }
+
+    pub fn bytes(&self) -> impl Iterator<Item = u8> {
+        self.0.as_bytes().iter().copied()
+    }
+}
+
+impl Default for SerialNumber {
+    fn default() -> Self {
+        Self("0000000000000000".into())
+    }
+}
+
+impl From<&str> for SerialNumber {
+    fn from(value: &str) -> Self {
+        Self(value.into())
+    }
+}
+
+impl Display for SerialNumber {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.0)
+    }
+}

@@ -1,0 +1,6 @@
+alias fmt := format
+format:
+    cargo fmt
+
+format-check:
+    cargo fmt --check

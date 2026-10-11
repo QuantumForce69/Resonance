@@ -1,0 +1,28 @@
+use openscq30_lib_macros::Has;
+
+use crate::devices::soundcore::common::structures::{
+    CommonEqualizerConfiguration, FirmwareVersion, SerialNumber, SingleBattery, WearingDetection,
+};
+
+use super::packets::A3033StateUpdatePacket;
+
+#[derive(Debug, Clone, PartialEq, Eq, Has)]
+pub struct A3033State {
+    battery: SingleBattery,
+    equalizer_configuration: CommonEqualizerConfiguration<1, 8>,
+    firmware_version: FirmwareVersion,
+    serial_number: SerialNumber,
+    wearing_detection: WearingDetection,
+}
+
+impl From<A3033StateUpdatePacket> for A3033State {
+    fn from(value: A3033StateUpdatePacket) -> Self {
+        Self {
+            battery: value.battery,
+            equalizer_configuration: value.equalizer_configuration,
+            firmware_version: value.firmware_version,
+            serial_number: value.serial_number,
+            wearing_detection: value.wearing_detection,
+        }
+    }
+}

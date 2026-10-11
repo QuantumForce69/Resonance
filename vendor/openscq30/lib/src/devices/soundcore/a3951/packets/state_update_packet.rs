@@ -1,0 +1,220 @@
+use std::iter;
+
+use async_trait::async_trait;
+use nom::{
+    IResult, Parser,
+    combinator::opt,
+    error::{ContextError, ParseError, context},
+    number::complete::{le_u8, le_u16},
+};
+use tokio::sync::watch;
+
+use crate::{
+    api::device,
+    devices::soundcore::{
+        a3951::{self, state::A3951State},
+        common::{
+            modules::ModuleCollection,
+            packet::{
+                self, Command,
+                inbound::{FromPacketBody, TryToPacket},
+                outbound::ToPacket,
+                parsing::take_bool,
+            },
+            packet_manager::PacketHandler,
+            state::Update,
+            structures::{
+                AgeRange, CommonEqualizerConfiguration, CustomHearId, DualBattery, Gender,
+                SoundModes, TouchTone, TwsStatus, WearingDetection,
+                button_configuration::ButtonStatusCollection,
+            },
+        },
+    },
+};
+
+// A3951
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct A3951StateUpdatePacket {
+    pub tws_status: TwsStatus,
+    pub battery: DualBattery,
+    pub equalizer_configuration: CommonEqualizerConfiguration<2, 8>,
+    pub gender: Gender,
+    pub age_range: AgeRange,
+    pub custom_hear_id: CustomHearId<2, 8>,
+    pub button_configuration: ButtonStatusCollection<6>,
+    pub sound_modes: SoundModes,
+    pub side_tone: bool,
+    pub wearing_detection: WearingDetection,
+    pub touch_tone: TouchTone,
+    pub hear_id_eq_preset: Option<u16>,
+    pub supports_new_battery: bool, // yes if packet is >98, don't parse
+    pub left_new_battery: u8,       // 0 to 9
+    pub right_new_battery: u8,      // 0 to 9
+}
+
+impl Default for A3951StateUpdatePacket {
+    fn default() -> Self {
+        Self {
+            tws_status: Default::default(),
+            battery: Default::default(),
+            equalizer_configuration: Default::default(),
+            gender: Default::default(),
+            age_range: Default::default(),
+            custom_hear_id: Default::default(),
+            button_configuration: a3951::BUTTON_SETTINGS.default_status_collection(),
+            sound_modes: Default::default(),
+            side_tone: Default::default(),
+            wearing_detection: Default::default(),
+            touch_tone: Default::default(),
+            hear_id_eq_preset: Default::default(),
+            supports_new_battery: Default::default(),
+            left_new_battery: Default::default(),
+            right_new_battery: Default::default(),
+        }
+    }
+}
+
+impl FromPacketBody for A3951StateUpdatePacket {
+    type DirectionMarker = packet::InboundMarker;
+
+    fn take<'a, E: ParseError<&'a [u8]> + ContextError<&'a [u8]>>(
+        input: &'a [u8],
+    ) -> IResult<&'a [u8], Self, E> {
+        context("a3951 state update packet", |input| {
+            // required fields
+            let (
+                input,
+                (
+                    tws_status,
+                    battery,
+                    equalizer_configuration,
+                    gender,
+                    age_range,
+                    custom_hear_id,
+                    button_configuration,
+                    sound_modes,
+                    side_tone,
+                    wearing_detection,
+                    touch_tone,
+                ),
+            ) = (
+                TwsStatus::take,
+                DualBattery::take,
+                CommonEqualizerConfiguration::take,
+                Gender::take,
+                AgeRange::take,
+                CustomHearId::take,
+                ButtonStatusCollection::take(a3951::BUTTON_SETTINGS.parse_settings()),
+                SoundModes::take,
+                take_bool, // side tone
+                WearingDetection::take,
+                TouchTone::take, // touch tone
+            )
+                .parse_complete(input)?;
+
+            // >=96 length optional fields
+            let (input, hear_id_eq_preset) = opt(le_u16).parse_complete(input)?;
+
+            // >=98 length optional fields
+            let (input, new_battery) = opt((le_u8, le_u8)).parse_complete(input)?;
+
+            Ok((
+                input,
+                Self {
+                    tws_status,
+                    battery,
+                    equalizer_configuration,
+                    gender,
+                    age_range,
+                    custom_hear_id,
+                    button_configuration,
+                    sound_modes,
+                    side_tone,
+                    wearing_detection,
+                    touch_tone,
+                    hear_id_eq_preset,
+                    supports_new_battery: new_battery.is_some(),
+                    left_new_battery: new_battery.as_ref().map(|b| b.0).unwrap_or_default(),
+                    right_new_battery: new_battery.as_ref().map(|b| b.1).unwrap_or_default(),
+                },
+            ))
+        })
+        .parse_complete(input)
+    }
+}
+
+impl ToPacket for A3951StateUpdatePacket {
+    type DirectionMarker = packet::InboundMarker;
+
+    fn command(&self) -> Command {
+        packet::inbound::STATE_COMMAND
+    }
+
+    fn body(&self) -> Vec<u8> {
+        self.tws_status
+            .bytes()
+            .into_iter()
+            .chain(self.battery.bytes())
+            .chain(self.equalizer_configuration.bytes())
+            .chain([self.gender.0, self.age_range.0])
+            .chain([self.custom_hear_id.is_enabled as u8])
+            .chain(self.custom_hear_id.volume_adjustment_bytes())
+            .chain(self.custom_hear_id.time.to_be_bytes())
+            .chain([
+                self.custom_hear_id.hear_id_type as u8,
+                self.custom_hear_id.favorite_music_genre.single_byte(),
+            ])
+            .chain(self.custom_hear_id.custom_volume_adjustment_bytes())
+            .chain(
+                self.button_configuration
+                    .bytes(a3951::BUTTON_SETTINGS.parse_settings()),
+            )
+            .chain(self.sound_modes.bytes())
+            .chain(iter::once(self.side_tone.into()))
+            .chain(self.wearing_detection.bytes())
+            .chain(self.touch_tone.bytes())
+            .collect()
+    }
+}
+
+struct StateUpdatePacketHandler;
+
+#[async_trait]
+impl PacketHandler<A3951State> for StateUpdatePacketHandler {
+    async fn handle_packet(
+        &self,
+        state: &watch::Sender<A3951State>,
+        packet: &packet::Inbound,
+    ) -> device::Result<()> {
+        let packet: A3951StateUpdatePacket = packet.try_to_packet()?;
+        state.send_modify(|state| state.update(packet));
+        Ok(())
+    }
+}
+
+impl ModuleCollection<A3951State> {
+    pub fn add_state_update(&mut self) {
+        self.packet_handlers.set_handler(
+            packet::inbound::STATE_COMMAND,
+            Box::new(StateUpdatePacketHandler {}),
+        );
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use nom_language::error::VerboseError;
+
+    use crate::devices::soundcore::common::packet::inbound::TryToPacket;
+
+    use super::*;
+
+    #[test]
+    fn serialize_and_deserialize() {
+        let bytes = A3951StateUpdatePacket::default()
+            .to_packet()
+            .bytes_with_checksum();
+        let (_, packet) = packet::Inbound::take_with_checksum::<VerboseError<_>>(&bytes).unwrap();
+        let _: A3951StateUpdatePacket = packet.try_to_packet().unwrap();
+    }
+}

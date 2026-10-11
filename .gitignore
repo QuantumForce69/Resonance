@@ -7,3 +7,5 @@ src-tauri/target-bench/
 src-tauri/target-*/
 streamdeck/target/
 streamdeck/com.resonance.streamdeck.sdPlugin/*.exe
+vendor/openscq30/target/
+vendor/openscq30/Cargo.lock

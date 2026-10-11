@@ -1,0 +1,147 @@
+use std::{
+    collections::{HashMap, HashSet},
+    panic::Location,
+    sync::{Arc, Mutex},
+};
+
+use async_trait::async_trait;
+use macaddr::MacAddr6;
+use nom_language::error::VerboseError;
+use openscq30_i18n::Translate;
+use tokio::sync::{mpsc, watch};
+
+use crate::{
+    api::connection::{
+        self, ConnectionDescriptor, ConnectionStatus, RfcommBackend, RfcommConnection,
+    },
+    connection::RfcommServiceSelectionStrategy,
+    devices::{
+        DeviceModel,
+        soundcore::common::{device::SoundcoreDeviceConfig, packet},
+    },
+};
+
+use super::packet::Command;
+
+pub struct DemoConnectionRegistry {
+    model: DeviceModel,
+    packet_responses: HashMap<Command, packet::Inbound>,
+    config: SoundcoreDeviceConfig,
+}
+
+impl DemoConnectionRegistry {
+    pub fn new(
+        model: DeviceModel,
+        packet_responses: HashMap<Command, packet::Inbound>,
+        config: SoundcoreDeviceConfig,
+    ) -> Self {
+        Self {
+            model,
+            packet_responses,
+            config,
+        }
+    }
+}
+
+#[async_trait]
+impl RfcommBackend for DemoConnectionRegistry {
+    async fn devices(&self) -> connection::Result<HashSet<ConnectionDescriptor>> {
+        Ok(HashSet::from([ConnectionDescriptor {
+            name: self.model.translate().clone(),
+            mac_address: self.model.demo_mac_address(),
+        }]))
+    }
+
+    async fn connect(
+        &self,
+        _mac_address: MacAddr6,
+        _select_uuid: RfcommServiceSelectionStrategy,
+    ) -> connection::Result<Arc<dyn RfcommConnection + Send + Sync>> {
+        Ok(Arc::new(DemoConnection::new(
+            self.packet_responses.to_owned(),
+            self.config,
+        )))
+    }
+}
+
+pub struct DemoConnection {
+    _connection_status_sender: watch::Sender<ConnectionStatus>,
+    connection_status_receiver: Mutex<Option<watch::Receiver<ConnectionStatus>>>,
+    packet_sender: mpsc::Sender<Vec<u8>>,
+    packet_receiver: Mutex<Option<mpsc::Receiver<Vec<u8>>>>,
+    packet_responses: HashMap<Command, packet::Inbound>,
+    config: SoundcoreDeviceConfig,
+}
+
+impl DemoConnection {
+    pub fn new(
+        packet_responses: HashMap<Command, packet::Inbound>,
+        config: SoundcoreDeviceConfig,
+    ) -> Self {
+        let (connection_status_sender, connection_status_receiver) =
+            watch::channel(ConnectionStatus::Connected);
+        let (packet_sender, packet_receiver) = mpsc::channel(10);
+        Self {
+            _connection_status_sender: connection_status_sender,
+            connection_status_receiver: Mutex::new(Some(connection_status_receiver)),
+            packet_sender,
+            packet_receiver: Mutex::new(Some(packet_receiver)),
+            packet_responses,
+            config,
+        }
+    }
+}
+
+#[async_trait]
+impl RfcommConnection for DemoConnection {
+    async fn write(&self, data: &[u8]) -> connection::Result<()> {
+        if data.len() < 7 {
+            tracing::error!("packet should always contain direction and command: {data:?}");
+            return Err(connection::Error::WriteError {
+                source: None,
+                location: Location::caller(),
+            });
+        }
+        tracing::debug!("writing packet {data:?}");
+
+        let (_remainder, packet) =
+            packet::Outbound::take::<VerboseError<_>>(self.config.checksum_kind)(data)
+                .expect("we should never send invalid packets");
+
+        if let Some(response) = self.packet_responses.get(&packet.command) {
+            self.packet_sender
+                .send(response.bytes(self.config.checksum_kind))
+                .await
+                .unwrap();
+        } else {
+            // ACK
+            self.packet_sender
+                .send(packet.ack().bytes(self.config.checksum_kind))
+                .await
+                .unwrap();
+        }
+        Ok(())
+    }
+
+    fn read_channel(&self) -> mpsc::Receiver<Vec<u8>> {
+        let (sender, receiver) = mpsc::channel(100);
+        let mut inner_receiver = self.packet_receiver.lock().unwrap().take().unwrap();
+        tokio::spawn(async move {
+            while let Some(data) = inner_receiver.recv().await {
+                tracing::debug!("received packet {data:?}");
+                if sender.send(data).await.is_err() {
+                    break;
+                }
+            }
+        });
+        receiver
+    }
+
+    fn connection_status(&self) -> watch::Receiver<ConnectionStatus> {
+        self.connection_status_receiver
+            .lock()
+            .unwrap()
+            .take()
+            .unwrap()
+    }
+}

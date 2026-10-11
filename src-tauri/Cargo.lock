@@ -3005,12 +3005,10 @@ checksum = "9f7c3e4beb33f85d45ae3e3a1792185706c8e16d043238c593331cc7cd313b50"
 [[package]]
 name = "openscq30-i18n"
 version = "2.12.0"
-source = "git+https://github.com/oppzippy/OpenSCQ30?tag=v2.12.0#3c77383affa3b3cf1b899df94f0b9d2ed14a031b"
 
 [[package]]
 name = "openscq30-i18n-macros"
 version = "2.12.0"
-source = "git+https://github.com/oppzippy/OpenSCQ30?tag=v2.12.0#3c77383affa3b3cf1b899df94f0b9d2ed14a031b"
 dependencies = [
  "heck 0.5.0",
  "openscq30-i18n",
@@ -3022,7 +3020,6 @@ dependencies = [
 [[package]]
 name = "openscq30-lib"
 version = "2.12.0"
-source = "git+https://github.com/oppzippy/OpenSCQ30?tag=v2.12.0#3c77383affa3b3cf1b899df94f0b9d2ed14a031b"
 dependencies = [
  "async-trait",
  "bitflags 2.13.2",
@@ -3058,12 +3055,10 @@ dependencies = [
 [[package]]
 name = "openscq30-lib-has"
 version = "2.12.0"
-source = "git+https://github.com/oppzippy/OpenSCQ30?tag=v2.12.0#3c77383affa3b3cf1b899df94f0b9d2ed14a031b"
 
 [[package]]
 name = "openscq30-lib-macros"
 version = "2.12.0"
-source = "git+https://github.com/oppzippy/OpenSCQ30?tag=v2.12.0#3c77383affa3b3cf1b899df94f0b9d2ed14a031b"
 dependencies = [
  "heck 0.5.0",
  "itertools",
