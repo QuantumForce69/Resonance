@@ -31,6 +31,9 @@ interface, and it stays out of the way: in the tray it uses about **1 % of one C
 - A fader, live meter and mute for every app playing sound, plus the master output.
 - Send each app to a different output device; the route is remembered and re-applied when the app next plays.
 - Set the default playback and recording devices from the **Devices** page.
+- **Restart audio** if sound stops or a device goes missing. You'll find it in the tray menu and Settings, or use <kbd>Ctrl</kbd>+<kbd>R</kbd> or
+  `resonance.exe -r`. It reconnects every device, app and your headphones, like Voicemeeter's Restart Audio Engine. Optionally it
+  restarts audio by itself when a device you're using is plugged back in.
 
 ### 🎙️ Processed microphone
 <img src="docs/images/processing.png" width="820" alt="The processing panel: noise suppression, noise gate, compressor and limiter, each with a knob, above the call mix and before/after meters">

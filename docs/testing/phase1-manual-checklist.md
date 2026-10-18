@@ -86,3 +86,16 @@ Run with `npm.cmd run tauri dev` (or the installed build). Tick each item.
 - [ ] An app that wasn't running gets its saved volume and output when it starts.
 - [ ] Update, Rename and Delete (with confirmation) work; deleting the active profile clears the highlight.
 - [ ] Start with Windows on: sign out and in → Resonance is in the tray, no window. Off: it doesn't start.
+
+## Restart audio
+
+- [ ] With music playing and Processing on, tray menu → **Restart audio**. Sound comes back within about 3 s, the
+      Space One reconnects, and Windows' default mic is still CABLE Output.
+- [ ] Settings → **Restart audio**: the button shows "Restarting…" and is disabled until it finishes.
+- [ ] **Ctrl+R** in the main window restarts audio. Ctrl+R while typing in a text field does nothing. Holding Ctrl+R
+      restarts only once.
+- [ ] `resonance.exe -r` from a terminal while Resonance runs restarts audio without opening a window.
+- [ ] `{"command":"restartAudio"}` on `\.\pipe\resonance` restarts audio.
+- [ ] Settings → turn on **Restart audio when a device comes back**. Unplug a USB device Resonance is using: a
+      "… disconnected" notice appears. Plug it back in: audio restarts once, about 2 s later.
+- [ ] With the setting off, unplugging and replugging does nothing extra.
