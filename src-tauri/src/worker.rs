@@ -32,6 +32,7 @@ enum Msg {
     Command(Command, Option<oneshot::Sender<Result<()>>>),
     GetState(oneshot::Sender<UiState>),
     SetMetering(bool),
+    Restart(Option<oneshot::Sender<Result<()>>>),
     Shutdown(Option<mpsc::Sender<()>>),
 }
 
@@ -73,6 +74,13 @@ impl WorkerHandle {
         let _ = self.tx.send(Msg::SetMetering(active));
     }
 
+    /// Restart audio: rebuilds the backend and engine on the worker thread (see `AppCore::rebuild`).
+    pub async fn restart(&self) -> Result<()> {
+        let (tx, rx) = oneshot::channel();
+        self.tx.send(Msg::Restart(Some(tx))).map_err(|_| stopped())?;
+        rx.await.map_err(|_| stopped())?
+    }
+
     pub fn shutdown(&self) {
         let _ = self.tx.send(Msg::Shutdown(None));
     }
@@ -87,9 +95,12 @@ impl WorkerHandle {
     }
 }
 
-pub fn spawn<F, B, S>(make_backend: F, engine: Box<dyn AudioEngine>, settings_path: PathBuf, sink: S) -> WorkerHandle
+/// Starts the audio worker. The factories are called once now and again on every restart, always on the
+/// worker thread (the backend's COM objects belong to it).
+pub fn spawn<F, E, B, S>(make_backend: F, make_engine: E, settings_path: PathBuf, sink: S) -> WorkerHandle
 where
-    F: FnOnce() -> Result<B> + Send + 'static,
+    F: Fn() -> Result<B> + Send + 'static,
+    E: Fn() -> Box<dyn AudioEngine> + Send + 'static,
     B: AudioBackend + 'static,
     S: EventSink,
 {
@@ -106,8 +117,13 @@ where
                 }
             };
             let mut core = AppCore::new(backend, Settings::load(&settings_path));
-            core.set_engine(engine);
-            run_loop(&mut core, &rx, &settings_path, &sink);
+            core.set_engine(make_engine());
+            let rebuild = |core: &mut AppCore<B>| -> Result<()> {
+                // Build the new backend first: if that fails, the current one keeps running.
+                let backend = make_backend()?;
+                core.rebuild(backend, make_engine())
+            };
+            run_loop(&mut core, &rx, &settings_path, &sink, &rebuild);
         })
         .expect("failed to spawn audio worker thread");
     WorkerHandle { tx }
@@ -132,7 +148,13 @@ fn stop<B: AudioBackend>(core: &mut AppCore<B>, path: &Path, unsaved: bool) {
     core.stop_metering();
 }
 
-fn run_loop<B: AudioBackend>(core: &mut AppCore<B>, rx: &mpsc::Receiver<Msg>, path: &Path, sink: &impl EventSink) {
+fn run_loop<B: AudioBackend>(
+    core: &mut AppCore<B>,
+    rx: &mpsc::Receiver<Msg>,
+    path: &Path,
+    sink: &impl EventSink,
+    rebuild: &dyn Fn(&mut AppCore<B>) -> Result<()>,
+) {
     if let Err(e) = core.refresh() {
         tracing::warn!("initial refresh failed: {e}");
     }
@@ -166,6 +188,19 @@ fn run_loop<B: AudioBackend>(core: &mut AppCore<B>, rx: &mpsc::Receiver<Msg>, pa
                     let _ = reply.send(result);
                 }
                 changed = true;
+            }
+            Ok(Msg::Restart(reply)) => {
+                tracing::info!("restarting audio");
+                let result = rebuild(core);
+                if let Err(e) = &result {
+                    tracing::warn!("restart audio failed: {e}");
+                }
+                if let Some(reply) = reply {
+                    let _ = reply.send(result);
+                }
+                changed = true;
+                // A restart can change the mute state the sink last saw.
+                last_mic = None;
             }
             Ok(Msg::GetState(reply)) => {
                 let _ = reply.send(core.state().clone());
@@ -279,7 +314,7 @@ mod tests {
     fn emits_initial_state_and_mic_status() {
         let dir = tempfile::tempdir().unwrap();
         let (tx, rx) = mpsc::channel();
-        let h = spawn(|| Ok(fake()), Box::new(NullEngine), dir.path().join("s.json"), TestSink(tx));
+        let h = spawn(|| Ok(fake()), || Box::new(NullEngine), dir.path().join("s.json"), TestSink(tx));
         assert_eq!(wait_for(&rx, "state"), "state apps=1");
         assert_eq!(wait_for(&rx, "mic"), "mic false");
         h.shutdown();
@@ -290,7 +325,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("s.json");
         let (tx, rx) = mpsc::channel();
-        let h = spawn(|| Ok(fake()), Box::new(NullEngine), path.clone(), TestSink(tx));
+        let h = spawn(|| Ok(fake()), || Box::new(NullEngine), path.clone(), TestSink(tx));
         wait_for(&rx, "state");
         h.command_blocking(Command::SetAppVolume { key: "spotify.exe".into(), volume: 0.25 }).unwrap();
         let err = h.command_blocking(Command::SetAppMute { key: "nope".into(), muted: true }).unwrap_err();
@@ -307,7 +342,7 @@ mod tests {
     fn meters_flow_only_while_metering_is_on() {
         let dir = tempfile::tempdir().unwrap();
         let (tx, rx) = mpsc::channel();
-        let h = spawn(|| Ok(fake()), Box::new(NullEngine), dir.path().join("s.json"), TestSink(tx));
+        let h = spawn(|| Ok(fake()), || Box::new(NullEngine), dir.path().join("s.json"), TestSink(tx));
         wait_for(&rx, "state");
         std::thread::sleep(Duration::from_millis(200));
         assert!(rx.try_iter().all(|m| !m.starts_with("meters")));
@@ -325,9 +360,9 @@ mod tests {
     fn backend_creation_failure_is_reported() {
         let dir = tempfile::tempdir().unwrap();
         let (tx, rx) = mpsc::channel();
-        let h = spawn::<_, FakeBackend, _>(
+        let h = spawn::<_, _, FakeBackend, _>(
             || Err(AudioError::Os("no audio".into())),
-            Box::new(NullEngine),
+            || Box::new(NullEngine),
             dir.path().join("s.json"),
             TestSink(tx),
         );
@@ -340,11 +375,34 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("s.json");
         let (tx, rx) = mpsc::channel();
-        let h = spawn(|| Ok(fake()), Box::new(NullEngine), path.clone(), TestSink(tx));
+        let h = spawn(|| Ok(fake()), || Box::new(NullEngine), path.clone(), TestSink(tx));
         wait_for(&rx, "state");
         h.command_blocking(Command::SetAppVolume { key: "spotify.exe".into(), volume: 0.3 }).unwrap();
         h.shutdown_and_wait(Duration::from_secs(3));
         assert_eq!(Settings::load(&path).apps["spotify.exe"].volume, 0.3);
         h.shutdown_and_wait(Duration::from_secs(3));
+    }
+
+    #[test]
+    fn restart_rebuilds_and_republishes_state() {
+        let dir = tempfile::tempdir().unwrap();
+        let (tx, rx) = mpsc::channel();
+        let built = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let count = built.clone();
+        let h = spawn(
+            move || {
+                count.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                Ok(fake())
+            },
+            || Box::new(NullEngine),
+            dir.path().join("s.json"),
+            TestSink(tx),
+        );
+        wait_for(&rx, "state");
+        let rt = tokio::runtime::Builder::new_current_thread().build().unwrap();
+        rt.block_on(h.restart()).unwrap();
+        assert_eq!(built.load(std::sync::atomic::Ordering::SeqCst), 2, "backend built at start and on restart");
+        wait_for(&rx, "state");
+        h.shutdown();
     }
 }

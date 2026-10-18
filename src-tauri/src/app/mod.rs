@@ -29,7 +29,7 @@ pub fn run() {
             let handle = app.handle().clone();
             let worker = worker::spawn(
                 crate::win::WasapiBackend::new,
-                Box::new(crate::win::WasapiEngine::new()),
+                || Box::new(crate::win::WasapiEngine::new()) as Box<dyn crate::engine::AudioEngine>,
                 settings_path.clone(),
                 sink::TauriSink { app: handle.clone() },
             );
