@@ -43,6 +43,15 @@ fn processing_on() -> (AppCore<FakeBackend>, FakeEngine) {
 }
 
 #[test]
+fn rebuild_succeeds_even_if_the_first_refresh_fails() {
+    let (mut c, _) = processing_on();
+    let mut fresh = backend();
+    fresh.fail_next_snapshot = true;
+    c.rebuild(fresh, Box::new(FakeEngine::default())).unwrap();
+    assert!(c.refresh().is_ok(), "the next resync recovers");
+}
+
+#[test]
 fn rebuild_stops_the_old_engine_and_starts_the_new_one() {
     let (mut c, old) = processing_on();
     assert!(old.0.lock().unwrap().running.is_some());

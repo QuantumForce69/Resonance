@@ -11,6 +11,10 @@ impl<B: AudioBackend> AppCore<B> {
         self.backend = backend;
         self.seen_sessions.clear();
         self.state.routing_available = self.backend.routing_available();
-        self.refresh().map(|_| ())
+        // The new backend is in place; a failed read here is picked up by the next periodic resync.
+        if let Err(e) = self.refresh() {
+            tracing::warn!("refresh after restart failed: {e}");
+        }
+        Ok(())
     }
 }

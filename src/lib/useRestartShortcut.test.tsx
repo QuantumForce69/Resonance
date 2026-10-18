@@ -15,6 +15,13 @@ it("Ctrl+R restarts audio", () => {
   expect(api.restartAudio).toHaveBeenCalledTimes(1);
 });
 
+it("ignores key repeat", () => {
+  vi.mocked(api.restartAudio).mockClear();
+  render(<Host />);
+  fireEvent.keyDown(window, { key: "r", ctrlKey: true, repeat: true });
+  expect(api.restartAudio).not.toHaveBeenCalled();
+});
+
 it("is ignored while typing in a field", () => {
   vi.mocked(api.restartAudio).mockClear();
   const { getByLabelText } = render(<Host />);

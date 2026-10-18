@@ -29,7 +29,7 @@ describe("SettingsView", () => {
     render(<SettingsView state={makeState()} />);
     fireEvent.click(screen.getByRole("button", { name: "Restart audio" }));
     expect(api.restartAudio).toHaveBeenCalled();
-    expect(screen.getByRole("button", { name: "Restarting…" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Restartingâ€¦" })).toBeDisabled();
     finish();
     await waitFor(() => expect(screen.getByRole("button", { name: "Restart audio" })).toBeEnabled());
   });

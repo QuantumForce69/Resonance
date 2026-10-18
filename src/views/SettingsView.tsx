@@ -44,7 +44,7 @@ export function SettingsView({ state }: { state: UiState }) {
         </Field>
         <Field label="Restart audio" hint="Reconnects every device, app and your headphones. Use it if sound stops or a device is missing. Shortcut: Ctrl+R.">
           <button type="button" onClick={restart} disabled={restarting} className="key">
-            {restarting ? "Restarting…" : "Restart audio"}
+            {restarting ? "Restartingâ€¦" : "Restart audio"}
           </button>
         </Field>
         <Field label="Restart audio when a device comes back" hint="If a device Resonance is using disconnects, restart audio once it's plugged back in">

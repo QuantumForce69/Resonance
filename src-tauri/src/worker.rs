@@ -115,7 +115,10 @@ where
                 Err(e) => {
                     tracing::error!("audio backend failed to start: {e}");
                     sink.notice(&e);
-                    return;
+                    match wait_for_backend(&rx, &make_backend) {
+                        Some(b) => b,
+                        None => return,
+                    }
                 }
             };
             let mut core = AppCore::new(backend, Settings::load(&settings_path));
@@ -129,6 +132,50 @@ where
         })
         .expect("failed to spawn audio worker thread");
     WorkerHandle { tx }
+}
+
+/// The backend couldn't start (e.g. the Windows audio service wasn't ready at login). Retries every 2 s and on
+/// Restart audio, answering other requests as "not running". `None` means the app is shutting down.
+fn wait_for_backend<B>(rx: &mpsc::Receiver<Msg>, make_backend: &dyn Fn() -> Result<B>) -> Option<B> {
+    loop {
+        match rx.recv_timeout(Duration::from_secs(2)) {
+            Ok(Msg::Restart(reply)) => match make_backend() {
+                Ok(b) => {
+                    if let Some(reply) = reply {
+                        let _ = reply.send(Ok(()));
+                    }
+                    return Some(b);
+                }
+                Err(e) => {
+                    tracing::warn!("restart audio failed: {e}");
+                    if let Some(reply) = reply {
+                        let _ = reply.send(Err(e));
+                    }
+                }
+            },
+            Ok(Msg::Command(_, reply)) => {
+                if let Some(reply) = reply {
+                    let _ = reply.send(Err(stopped()));
+                }
+            }
+            Ok(Msg::GetState(reply)) => {
+                let _ = reply.send(UiState::default());
+            }
+            Ok(Msg::SetMetering(_)) => {}
+            Ok(Msg::Shutdown(done)) => {
+                if let Some(done) = done {
+                    let _ = done.send(());
+                }
+                return None;
+            }
+            Err(RecvTimeoutError::Timeout) => {
+                if let Ok(b) = make_backend() {
+                    return Some(b);
+                }
+            }
+            Err(RecvTimeoutError::Disconnected) => return None,
+        }
+    }
 }
 
 fn save(core: &AppCore<impl AudioBackend>, path: &Path) {
@@ -383,6 +430,31 @@ mod tests {
         );
         assert_eq!(wait_for(&rx, "notice"), "notice no audio");
         assert_eq!(h.command_blocking(Command::ToggleMicMute).unwrap_err().code(), "unavailable");
+    }
+
+    #[test]
+    fn restart_recovers_when_the_backend_failed_at_startup() {
+        let dir = tempfile::tempdir().unwrap();
+        let (tx, rx) = mpsc::channel();
+        let calls = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let count = calls.clone();
+        let h = spawn(
+            move || {
+                if count.fetch_add(1, std::sync::atomic::Ordering::SeqCst) == 0 {
+                    Err(AudioError::Os("audio service not ready".into()))
+                } else {
+                    Ok(fake())
+                }
+            },
+            || Box::new(NullEngine),
+            dir.path().join("s.json"),
+            TestSink(tx),
+        );
+        assert_eq!(wait_for(&rx, "notice"), "notice audio service not ready");
+        let rt = tokio::runtime::Builder::new_current_thread().build().unwrap();
+        rt.block_on(h.restart()).unwrap();
+        assert_eq!(wait_for(&rx, "state"), "state apps=1");
+        h.shutdown();
     }
 
     #[test]

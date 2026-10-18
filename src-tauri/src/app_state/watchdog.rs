@@ -9,7 +9,7 @@ pub const SETTLE_TICKS: u32 = 8;
 
 #[derive(Default)]
 pub struct Watchdog {
-    /// In-use devices seen present, by id -> name.
+    /// Devices in use as of the last tick (present then), plus any that dropped out since, by id -> name.
     watched: HashMap<String, String>,
     /// Watched devices currently missing.
     missing: HashSet<String>,
@@ -50,11 +50,15 @@ impl Watchdog {
                 self.countdown = Some(n - 1);
             }
         }
-        for (id, name) in in_use {
-            if present.contains(id) {
-                self.watched.insert(id.clone(), name.clone());
+        // Watch what is in use now, plus devices that dropped out, so they are recognised when they return.
+        let mut next: HashMap<String, String> =
+            in_use.iter().filter(|(id, _)| present.contains(id)).cloned().collect();
+        for (id, name) in &self.watched {
+            if self.missing.contains(id) {
+                next.entry(id.clone()).or_insert_with(|| name.clone());
             }
         }
+        self.watched = next;
         tick
     }
 }
@@ -114,6 +118,20 @@ mod tests {
         w.tick(true, &used(&[]), &ids(&["other"]));
         let t = w.tick(true, &used(&[]), &ids(&[]));
         assert!(t.disconnected.is_empty());
+    }
+
+    #[test]
+    fn a_device_no_longer_in_use_is_forgotten() {
+        let mut w = Watchdog::default();
+        w.tick(true, &used(&["headset"]), &ids(&["headset"]));
+        // Still plugged in, but Windows now plays through the speakers.
+        w.tick(true, &used(&["speakers"]), &ids(&["headset", "speakers"]));
+        let t = w.tick(true, &used(&["speakers"]), &ids(&["speakers"]));
+        assert!(t.disconnected.is_empty());
+        for _ in 0..SETTLE_TICKS + 3 {
+            let t = w.tick(true, &used(&["speakers"]), &ids(&["headset", "speakers"]));
+            assert!(t.disconnected.is_empty() && !t.restart);
+        }
     }
 
     #[test]
