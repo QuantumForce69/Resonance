@@ -46,6 +46,10 @@ impl EventSink for TauriSink {
     fn notice(&self, error: &AudioError) {
         push_notice(&self.app, error.clone());
     }
+
+    fn restart_wanted(&self) {
+        super::restart::spawn_restart(&self.app);
+    }
 }
 
 pub struct HeadsetEvents {

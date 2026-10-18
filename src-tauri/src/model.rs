@@ -154,6 +154,8 @@ pub struct UiSettings {
     pub start_minimized: bool,
     /// The first-run setup has been finished or skipped.
     pub onboarded: bool,
+    /// Restart audio automatically when a device Resonance was using comes back after disconnecting.
+    pub auto_restart_audio: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Default, Serialize)]

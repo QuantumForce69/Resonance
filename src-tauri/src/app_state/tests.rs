@@ -209,7 +209,7 @@ fn config_commands_update_settings_and_state() {
     c.apply(Command::SetMicConfig { config: cfg.clone() }).unwrap();
     assert_eq!(c.state().mic, cfg);
     assert_eq!(c.settings().mic, cfg);
-    let ui = UiSettings { theme: Theme::Dark, start_minimized: true, onboarded: false };
+    let ui = UiSettings { theme: Theme::Dark, start_minimized: true, onboarded: false, auto_restart_audio: false };
     c.apply(Command::SetUiSettings { ui: ui.clone() }).unwrap();
     assert_eq!(c.state().ui, ui);
     c.apply(Command::ResetAppMemory).unwrap();

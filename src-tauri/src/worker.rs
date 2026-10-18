@@ -26,6 +26,8 @@ pub trait EventSink: Send + 'static {
     fn meters(&self, frame: &MeterFrame);
     fn mic_muted(&self, muted: bool);
     fn notice(&self, error: &AudioError);
+    /// The watchdog wants audio restarted (a device in use came back).
+    fn restart_wanted(&self);
 }
 
 enum Msg {
@@ -164,6 +166,7 @@ fn run_loop<B: AudioBackend>(
         sink.mic_muted(m);
     }
 
+    let mut watchdog = crate::app_state::Watchdog::default();
     let mut metering = false;
     let mut next_resync = Instant::now() + RESYNC_INTERVAL;
     let mut next_meter = Instant::now();
@@ -232,6 +235,15 @@ fn run_loop<B: AudioBackend>(
                 Ok(c) => changed |= c,
                 Err(e) => tracing::warn!("refresh failed: {e}"),
             }
+            let tick = watchdog.tick(core.settings().ui.auto_restart_audio, &core.in_use_devices(), &core.present_devices());
+            for name in tick.disconnected {
+                sink.notice(&AudioError::NotFound(format!(
+                    "{name} disconnected. Resonance will restart audio when it's back."
+                )));
+            }
+            if tick.restart {
+                sink.restart_wanted();
+            }
             next_resync = now + RESYNC_INTERVAL;
         }
         if metering && now >= next_meter {
@@ -282,6 +294,9 @@ mod tests {
         }
         fn notice(&self, e: &AudioError) {
             let _ = self.0.send(format!("notice {e}"));
+        }
+        fn restart_wanted(&self) {
+            let _ = self.0.send("restart wanted".into());
         }
     }
 

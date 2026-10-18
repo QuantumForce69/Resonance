@@ -71,7 +71,7 @@ export function makeState(p: Partial<UiState> = {}): UiState {
     ],
     routingAvailable: true,
     mic: { hotkey: "Ctrl+Shift+M", mode: "toggle" },
-    ui: { theme: "system", startMinimized: false, onboarded: true },
+    ui: { theme: "system", startMinimized: false, autoRestartAudio: false, onboarded: true },
     processing: makeProcessing(),
     profiles: [],
     activeProfile: null,

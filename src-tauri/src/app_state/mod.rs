@@ -5,6 +5,7 @@ mod processing;
 #[cfg(test)]
 mod processing_tests;
 mod restart;
+mod watchdog;
 #[cfg(test)]
 mod restart_tests;
 mod call;
@@ -16,6 +17,7 @@ mod call_tests;
 
 pub use group::{app_key, group_sessions, SYSTEM_KEY};
 pub use call::root_pids;
+pub use watchdog::{Watchdog, SETTLE_TICKS};
 pub use processing::{find_cable, Cable, RETRY_REFRESHES};
 
 use std::collections::{HashMap, HashSet};
@@ -76,6 +78,32 @@ let mut core = Self {
 
     pub fn state(&self) -> &UiState {
         &self.state
+    }
+
+    /// Devices Resonance is using, as (id, name): the default playback device, the processed mic's source
+    /// and VB-Cable while the engine runs, and every app's chosen output.
+    pub fn in_use_devices(&self) -> Vec<(String, String)> {
+        let name = |id: &str| self.state.devices.iter().find(|d| d.id == id).map(|d| d.name.clone());
+        let mut ids: Vec<String> = self
+            .state
+            .devices
+            .iter()
+            .filter(|d| d.flow == Flow::Render && d.default_console)
+            .map(|d| d.id.clone())
+            .collect();
+        if let Some(route) = &self.engine_state.route {
+            ids.push(route.source_id.clone());
+            ids.push(route.cable_id.clone());
+        }
+        ids.extend(self.state.apps.iter().filter_map(|a| a.output.clone()));
+        ids.sort();
+        ids.dedup();
+        ids.into_iter().filter_map(|id| name(&id).map(|n| (id, n))).collect()
+    }
+
+    /// Ids of devices Windows reports as active right now.
+    pub fn present_devices(&self) -> HashSet<String> {
+        self.state.devices.iter().filter(|d| d.state == DeviceState::Active).map(|d| d.id.clone()).collect()
     }
 
     pub fn settings(&self) -> &Settings {

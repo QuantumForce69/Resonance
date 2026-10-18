@@ -47,6 +47,7 @@ export interface MicConfig {
 export interface UiSettings {
   theme: Theme;
   startMinimized: boolean;
+  autoRestartAudio: boolean;
   onboarded: boolean;
 }
 

@@ -11,7 +11,7 @@ vi.mock("../lib/api", () => ({
 }));
 
 const fresh = (cable = true) =>
-  makeState({ ui: { theme: "system", startMinimized: false, onboarded: false }, processing: makeProcessing({ cableInstalled: cable }) });
+  makeState({ ui: { theme: "system", startMinimized: false, autoRestartAudio: false, onboarded: false }, processing: makeProcessing({ cableInstalled: cable }) });
 
 const next = () => fireEvent.click(screen.getByRole("button", { name: "Next" }));
 
