@@ -15,9 +15,10 @@ const ICON_MUTED: &[u8] = include_bytes!("../../icons/tray-muted.png");
 pub fn create(app: &AppHandle) -> tauri::Result<()> {
     let open = MenuItem::with_id(app, "open", "Open Resonance", true, None::<&str>)?;
     let mute = MenuItem::with_id(app, "mute", "Toggle microphone mute", true, None::<&str>)?;
+    let restart = MenuItem::with_id(app, "restart", "Restart audio", true, None::<&str>)?;
     let quit = MenuItem::with_id(app, "quit", "Quit Resonance", true, None::<&str>)?;
     let sep = PredefinedMenuItem::separator(app)?;
-    let menu = Menu::with_items(app, &[&open, &mute, &sep, &quit])?;
+    let menu = Menu::with_items(app, &[&open, &mute, &restart, &sep, &quit])?;
     TrayIconBuilder::with_id(TRAY_ID)
         .icon(Image::from_bytes(ICON)?)
         .tooltip("Resonance")
@@ -26,6 +27,7 @@ pub fn create(app: &AppHandle) -> tauri::Result<()> {
         .on_menu_event(|app, event| match event.id.as_ref() {
             "open" => wnd::show_main(app),
             "mute" => app.state::<WorkerHandle>().send(Command::ToggleMicMute),
+            "restart" => super::restart::spawn_restart(app),
             "quit" => {
                 app.state::<WorkerHandle>().shutdown_and_wait(std::time::Duration::from_secs(3));
                 app.exit(0);

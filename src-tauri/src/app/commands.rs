@@ -141,3 +141,9 @@ pub fn set_autostart(enabled: bool) -> Result<()> {
         crate::win::startup::disable()
     }
 }
+
+/// Async: the restart waits on the audio worker (up to a few seconds while the engine starts).
+#[tauri::command]
+pub async fn restart_audio(app: AppHandle) -> Result<()> {
+    super::restart::restart_audio(&app).await
+}

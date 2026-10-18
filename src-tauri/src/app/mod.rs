@@ -2,6 +2,7 @@ mod commands;
 mod control;
 mod hotkeys;
 mod logging;
+mod restart;
 mod sink;
 mod tray;
 mod wnd;
@@ -15,11 +16,18 @@ pub fn run() {
     let settings_path = paths::settings_path();
     let initial = Settings::load(&settings_path);
     // Set by the Start with Windows entry: stay in the tray whatever "Start in the tray" says.
-    let launched_minimized = std::env::args().any(|a| a == crate::win::startup::MINIMIZED_ARG);
+    let launched_minimized = std::env::args()
+        .any(|a| a == crate::win::startup::MINIMIZED_ARG || restart::RESTART_ARGS.contains(&a.as_str()));
     tracing::info!("Resonance starting");
 
     tauri::Builder::default()
-        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| wnd::show_main(app)))
+        .plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
+            if restart::wants_restart(&args) {
+                restart::spawn_restart(app);
+            } else {
+                wnd::show_main(app);
+            }
+        }))
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .manage(commands::IconCache::default())
         .manage(sink::Notices::default())
@@ -37,8 +45,13 @@ pub fn run() {
             app.manage(worker);
             // Lets companion apps (the Stream Deck plugin) show and toggle the mic's mute state.
             let mic_status = app.state::<control::MicStatus>().subscribe();
+            let control_app = handle.clone();
             tauri::async_runtime::spawn(async move {
-                if let Err(e) = control::serve(control::PIPE_NAME, mic_status, move |cmd| commands.send(cmd)).await {
+                let on_control = move |c: control::Control| match c {
+                    control::Control::Worker(cmd) => commands.send(cmd),
+                    control::Control::RestartAudio => restart::spawn_restart(&control_app),
+                };
+                if let Err(e) = control::serve(control::PIPE_NAME, mic_status, on_control).await {
                     tracing::warn!("companion control channel unavailable: {e}");
                 }
             });
@@ -90,6 +103,7 @@ pub fn run() {
             commands::apply_profile,
             commands::get_autostart,
             commands::set_autostart,
+            commands::restart_audio,
         ])
         .build(tauri::generate_context!())
         .expect("error while building Resonance")

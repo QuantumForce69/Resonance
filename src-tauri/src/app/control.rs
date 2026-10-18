@@ -2,7 +2,8 @@
 //! `\\.\pipe\resonance`, carrying one JSON object per line.
 //!
 //! Every connection is sent `{"micMuted":true}` (or `false`) as soon as the state is known and again each time
-//! it changes. A connection may send `{"command":"toggleMicMute"}` or `{"command":"setMicMute","muted":true}`.
+//! it changes. A connection may send `{"command":"toggleMicMute"}`, `{"command":"setMicMute","muted":true}` or
+//! `{"command":"restartAudio"}`.
 //! The pipe only accepts local clients, and only the signed-in user can write to it.
 
 use std::{io, sync::Arc};
@@ -23,13 +24,22 @@ pub const PIPE_NAME: &str = r"\\.\pipe\resonance";
 enum Request {
     ToggleMicMute,
     SetMicMute { muted: bool },
+    RestartAudio,
 }
 
-impl From<Request> for Command {
+/// What a control request asks for.
+#[derive(Debug, PartialEq)]
+pub enum Control {
+    Worker(Command),
+    RestartAudio,
+}
+
+impl From<Request> for Control {
     fn from(request: Request) -> Self {
         match request {
-            Request::ToggleMicMute => Command::ToggleMicMute,
-            Request::SetMicMute { muted } => Command::SetMicMute { muted },
+            Request::ToggleMicMute => Control::Worker(Command::ToggleMicMute),
+            Request::SetMicMute { muted } => Control::Worker(Command::SetMicMute { muted }),
+            Request::RestartAudio => Control::RestartAudio,
         }
     }
 }
@@ -59,13 +69,13 @@ impl MicStatus {
     }
 }
 
-type OnCommand = Arc<dyn Fn(Command) + Send + Sync>;
+type OnCommand = Arc<dyn Fn(Control) + Send + Sync>;
 
 /// Serves the pipe `name` until it can't create another instance (another Resonance already owns the name).
 pub async fn serve(
     name: &str,
     status: watch::Receiver<Option<bool>>,
-    on_command: impl Fn(Command) + Send + Sync + 'static,
+    on_command: impl Fn(Control) + Send + Sync + 'static,
 ) -> io::Result<()> {
     let on_command: OnCommand = Arc::new(on_command);
     let mut server = ServerOptions::new().first_pipe_instance(true).create(name)?;
@@ -126,10 +136,17 @@ mod tests {
             Request::SetMicMute { muted: true }
         );
         assert!(serde_json::from_str::<Request>(r#"{"command":"formatDisk"}"#).is_err());
-        assert_eq!(Command::from(Request::SetMicMute { muted: false }), Command::SetMicMute { muted: false });
+        assert_eq!(
+            serde_json::from_str::<Request>(r#"{"command":"restartAudio"}"#).unwrap(),
+            Request::RestartAudio
+        );
+        assert_eq!(
+            Control::from(Request::SetMicMute { muted: false }),
+            Control::Worker(Command::SetMicMute { muted: false })
+        );
     }
 
-    fn start(name: &'static str) -> (MicStatus, mpsc::UnboundedReceiver<Command>) {
+    fn start(name: &'static str) -> (MicStatus, mpsc::UnboundedReceiver<Control>) {
         let status = MicStatus::default();
         let (tx, rx) = mpsc::unbounded_channel();
         let watch = status.subscribe();
@@ -164,7 +181,7 @@ mod tests {
 
         client.get_mut().write_all(b"nonsense\n{\"command\":\"toggleMicMute\"}\n").await.unwrap();
         let cmd = timeout(Duration::from_secs(2), commands.recv()).await.unwrap();
-        assert_eq!(cmd, Some(Command::ToggleMicMute));
+        assert_eq!(cmd, Some(Control::Worker(Command::ToggleMicMute)));
     }
 
     #[tokio::test]
@@ -177,8 +194,20 @@ mod tests {
             client.write_all(b"{\"command\":\"setMicMute\",\"muted\":true}\n").await.unwrap();
             drop(client);
             let cmd = timeout(Duration::from_secs(2), commands.recv()).await.unwrap();
-            assert_eq!(cmd, Some(Command::SetMicMute { muted: true }));
+            assert_eq!(cmd, Some(Control::Worker(Command::SetMicMute { muted: true })));
         }
+    }
+
+    #[tokio::test]
+    async fn restart_audio_reaches_the_handler() {
+        let name = r"\\.\pipe\resonance-test-restart";
+        let (status, mut controls) = start(name);
+        status.set(false);
+        let mut client = connect(name).await;
+        client.write_all(b"{\"command\":\"restartAudio\"}\n").await.unwrap();
+        drop(client);
+        let got = timeout(Duration::from_secs(2), controls.recv()).await.unwrap();
+        assert_eq!(got, Some(Control::RestartAudio));
     }
 
     #[tokio::test]
