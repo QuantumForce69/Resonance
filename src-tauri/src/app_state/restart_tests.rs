@@ -4,26 +4,20 @@ use crate::{
     fake::{FakeBackend, FakeEngine},
 };
 
-fn named(id: &str, flow: Flow, name: &str) -> RawDevice {
-    let mut d = FakeBackend::device(id, flow);
-    d.name = name.into();
-    d
-}
-
 /// Speakers, a desk mic (default for both roles), VB-Cable, and one Spotify session.
 fn backend() -> FakeBackend {
     let mut out1 = FakeBackend::device("out1", Flow::Render);
     out1.default_console = true;
     out1.default_comms = true;
-    let mut mic1 = named("mic1", Flow::Capture, "Desk Mic");
+    let mut mic1 = FakeBackend::named("mic1", Flow::Capture, "Desk Mic");
     mic1.default_console = true;
     mic1.default_comms = true;
     FakeBackend {
         devices: vec![
             out1,
             mic1,
-            named("cin", Flow::Render, "CABLE Input (VB-Audio Virtual Cable)"),
-            named("cout", Flow::Capture, "CABLE Output (VB-Audio Virtual Cable)"),
+            FakeBackend::named("cin", Flow::Render, "CABLE Input (VB-Audio Virtual Cable)"),
+            FakeBackend::named("cout", Flow::Capture, "CABLE Output (VB-Audio Virtual Cable)"),
         ],
         sessions: vec![FakeBackend::session("s1", 10, Some("spotify.exe"))],
         ..Default::default()

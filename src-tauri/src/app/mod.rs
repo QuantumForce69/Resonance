@@ -16,8 +16,8 @@ pub fn run() {
     let settings_path = paths::settings_path();
     let initial = Settings::load(&settings_path);
     // Set by the Start with Windows entry: stay in the tray whatever "Start in the tray" says.
-    let launched_minimized = std::env::args()
-        .any(|a| a == crate::win::startup::MINIMIZED_ARG || restart::RESTART_ARGS.contains(&a.as_str()));
+    let args: Vec<String> = std::env::args().collect();
+    let launched_minimized = restart::wants_restart(&args) || args.iter().any(|a| a == crate::win::startup::MINIMIZED_ARG);
     tracing::info!("Resonance starting");
 
     tauri::Builder::default()
@@ -45,13 +45,8 @@ pub fn run() {
             app.manage(worker);
             // Lets companion apps (the Stream Deck plugin) show and toggle the mic's mute state.
             let mic_status = app.state::<control::MicStatus>().subscribe();
-            let control_app = handle.clone();
             tauri::async_runtime::spawn(async move {
-                let on_control = move |c: control::Control| match c {
-                    control::Control::Worker(cmd) => commands.send(cmd),
-                    control::Control::RestartAudio => restart::spawn_restart(&control_app),
-                };
-                if let Err(e) = control::serve(control::PIPE_NAME, mic_status, on_control).await {
+                if let Err(e) = control::serve(control::PIPE_NAME, mic_status, move |cmd| commands.send(cmd)).await {
                     tracing::warn!("companion control channel unavailable: {e}");
                 }
             });

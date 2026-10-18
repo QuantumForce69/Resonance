@@ -55,7 +55,7 @@ fn is_active_capture(devices: &[Device], id: &str) -> bool {
     devices.iter().any(|d| d.id == id && d.flow == Flow::Capture && d.state == DeviceState::Active)
 }
 
-fn default_id(devices: &[Device], flow: Flow, role: Role) -> Option<String> {
+pub(super) fn default_id(devices: &[Device], flow: Flow, role: Role) -> Option<String> {
     devices
         .iter()
         .find(|d| {

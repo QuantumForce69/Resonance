@@ -4,7 +4,8 @@ use tauri::{AppHandle, Emitter, Manager};
 
 use super::{control::MicStatus, tray, wnd::VisibleWindows};
 use crate::{
-    error::AudioError,
+    error::{AudioError, Result},
+    headset::{model::HeadsetCommand, HeadsetHandle},
     model::{MeterFrame, UiState},
     worker::EventSink,
 };
@@ -47,8 +48,17 @@ impl EventSink for TauriSink {
         push_notice(&self.app, error.clone());
     }
 
-    fn restart_wanted(&self) {
-        super::restart::spawn_restart(&self.app);
+    fn restarted(&self, result: &Result<()>) {
+        // The headphones reconnect even if the audio side couldn't be rebuilt. This runs on the worker thread.
+        if let Some(headset) = self.app.try_state::<HeadsetHandle>() {
+            let headset = headset.inner().clone();
+            tauri::async_runtime::spawn(async move {
+                let _ = headset.command(HeadsetCommand::Retry).await;
+            });
+        }
+        if let Err(e) = result {
+            push_notice(&self.app, AudioError::Unavailable(format!("Couldn't restart audio: {e}")));
+        }
     }
 }
 

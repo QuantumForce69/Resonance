@@ -17,7 +17,7 @@ mod call_tests;
 
 pub use group::{app_key, group_sessions, SYSTEM_KEY};
 pub use call::root_pids;
-pub use watchdog::{Watchdog, SETTLE_TICKS};
+pub use watchdog::Watchdog;
 pub use processing::{find_cable, Cable, RETRY_REFRESHES};
 
 use std::collections::{HashMap, HashSet};
@@ -84,13 +84,7 @@ let mut core = Self {
     /// and VB-Cable while the engine runs, and every app's chosen output.
     pub fn in_use_devices(&self) -> Vec<(String, String)> {
         let name = |id: &str| self.state.devices.iter().find(|d| d.id == id).map(|d| d.name.clone());
-        let mut ids: Vec<String> = self
-            .state
-            .devices
-            .iter()
-            .filter(|d| d.flow == Flow::Render && d.default_console)
-            .map(|d| d.id.clone())
-            .collect();
+        let mut ids: Vec<String> = processing::default_id(&self.state.devices, Flow::Render, Role::Console).into_iter().collect();
         if let Some(route) = &self.engine_state.route {
             ids.push(route.source_id.clone());
             ids.push(route.cable_id.clone());
@@ -392,6 +386,9 @@ let mut core = Self {
             Command::RenameProfile { id, name } => self.rename_profile(&id, &name)?,
             Command::DeleteProfile { id } => self.delete_profile(&id)?,
             Command::ApplyProfile { id } => self.apply_profile(&id)?,
+            Command::RestartAudio => {
+                return Err(AudioError::Invalid("Restart audio is handled by the audio worker".into()));
+            }
             Command::SetProcessing { processing } => {
                 let mut p = processing;
                 p.dsp = p.dsp.clamped();

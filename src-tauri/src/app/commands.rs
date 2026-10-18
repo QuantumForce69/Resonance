@@ -144,6 +144,6 @@ pub fn set_autostart(enabled: bool) -> Result<()> {
 
 /// Async: the restart waits on the audio worker (up to a few seconds while the engine starts).
 #[tauri::command]
-pub async fn restart_audio(app: AppHandle) -> Result<()> {
-    super::restart::restart_audio(&app).await
+pub async fn restart_audio(worker: State<'_, WorkerHandle>) -> Result<()> {
+    worker.command(Command::RestartAudio).await
 }

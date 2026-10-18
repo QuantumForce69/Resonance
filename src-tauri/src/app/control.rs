@@ -27,19 +27,12 @@ enum Request {
     RestartAudio,
 }
 
-/// What a control request asks for.
-#[derive(Debug, PartialEq)]
-pub enum Control {
-    Worker(Command),
-    RestartAudio,
-}
-
-impl From<Request> for Control {
+impl From<Request> for Command {
     fn from(request: Request) -> Self {
         match request {
-            Request::ToggleMicMute => Control::Worker(Command::ToggleMicMute),
-            Request::SetMicMute { muted } => Control::Worker(Command::SetMicMute { muted }),
-            Request::RestartAudio => Control::RestartAudio,
+            Request::ToggleMicMute => Command::ToggleMicMute,
+            Request::SetMicMute { muted } => Command::SetMicMute { muted },
+            Request::RestartAudio => Command::RestartAudio,
         }
     }
 }
@@ -69,13 +62,13 @@ impl MicStatus {
     }
 }
 
-type OnCommand = Arc<dyn Fn(Control) + Send + Sync>;
+type OnCommand = Arc<dyn Fn(Command) + Send + Sync>;
 
 /// Serves the pipe `name` until it can't create another instance (another Resonance already owns the name).
 pub async fn serve(
     name: &str,
     status: watch::Receiver<Option<bool>>,
-    on_command: impl Fn(Control) + Send + Sync + 'static,
+    on_command: impl Fn(Command) + Send + Sync + 'static,
 ) -> io::Result<()> {
     let on_command: OnCommand = Arc::new(on_command);
     let mut server = ServerOptions::new().first_pipe_instance(true).create(name)?;
@@ -141,12 +134,12 @@ mod tests {
             Request::RestartAudio
         );
         assert_eq!(
-            Control::from(Request::SetMicMute { muted: false }),
-            Control::Worker(Command::SetMicMute { muted: false })
+            Command::from(Request::SetMicMute { muted: false }),
+            Command::SetMicMute { muted: false }
         );
     }
 
-    fn start(name: &'static str) -> (MicStatus, mpsc::UnboundedReceiver<Control>) {
+    fn start(name: &'static str) -> (MicStatus, mpsc::UnboundedReceiver<Command>) {
         let status = MicStatus::default();
         let (tx, rx) = mpsc::unbounded_channel();
         let watch = status.subscribe();
@@ -181,7 +174,7 @@ mod tests {
 
         client.get_mut().write_all(b"nonsense\n{\"command\":\"toggleMicMute\"}\n").await.unwrap();
         let cmd = timeout(Duration::from_secs(2), commands.recv()).await.unwrap();
-        assert_eq!(cmd, Some(Control::Worker(Command::ToggleMicMute)));
+        assert_eq!(cmd, Some(Command::ToggleMicMute));
     }
 
     #[tokio::test]
@@ -194,7 +187,7 @@ mod tests {
             client.write_all(b"{\"command\":\"setMicMute\",\"muted\":true}\n").await.unwrap();
             drop(client);
             let cmd = timeout(Duration::from_secs(2), commands.recv()).await.unwrap();
-            assert_eq!(cmd, Some(Control::Worker(Command::SetMicMute { muted: true })));
+            assert_eq!(cmd, Some(Command::SetMicMute { muted: true }));
         }
     }
 
@@ -207,7 +200,7 @@ mod tests {
         client.write_all(b"{\"command\":\"restartAudio\"}\n").await.unwrap();
         drop(client);
         let got = timeout(Duration::from_secs(2), controls.recv()).await.unwrap();
-        assert_eq!(got, Some(Control::RestartAudio));
+        assert_eq!(got, Some(Command::RestartAudio));
     }
 
     #[tokio::test]

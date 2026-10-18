@@ -5,27 +5,21 @@ use crate::{
     profile::{AppOutput, PartChoice},
 };
 
-fn named(id: &str, flow: Flow, name: &str) -> RawDevice {
-    let mut d = FakeBackend::device(id, flow);
-    d.name = name.into();
-    d
-}
-
 /// Speakers (default) and headphones, a mic, VB-Cable; Spotify (pid 10) and Chrome (pid 20).
 fn backend() -> FakeBackend {
-    let mut out1 = named("out1", Flow::Render, "Speakers");
+    let mut out1 = FakeBackend::named("out1", Flow::Render, "Speakers");
     out1.default_console = true;
     out1.default_comms = true;
-    let mut mic1 = named("mic1", Flow::Capture, "Desk Mic");
+    let mut mic1 = FakeBackend::named("mic1", Flow::Capture, "Desk Mic");
     mic1.default_console = true;
     mic1.default_comms = true;
     FakeBackend {
         devices: vec![
             out1,
-            named("out2", Flow::Render, "Headphones"),
+            FakeBackend::named("out2", Flow::Render, "Headphones"),
             mic1,
-            named("cin", Flow::Render, "CABLE Input (VB-Audio Virtual Cable)"),
-            named("cout", Flow::Capture, "CABLE Output (VB-Audio Virtual Cable)"),
+            FakeBackend::named("cin", Flow::Render, "CABLE Input (VB-Audio Virtual Cable)"),
+            FakeBackend::named("cout", Flow::Capture, "CABLE Output (VB-Audio Virtual Cable)"),
         ],
         sessions: vec![
             FakeBackend::session("s1", 10, Some("spotify.exe")),

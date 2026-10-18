@@ -207,6 +207,8 @@ pub enum Command {
     RenameProfile { id: String, name: String },
     DeleteProfile { id: String },
     ApplyProfile { id: String },
+    /// Rebuild the backend and engine (Restart audio). Handled by the worker itself, never by `AppCore::apply`.
+    RestartAudio,
 }
 
 #[cfg(test)]

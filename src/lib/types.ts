@@ -197,7 +197,8 @@ export type Command =
   | { type: "setProcessing"; processing: ProcessingSettings }
   | { type: "setAppSend"; key: string; level: number | null }
   | { type: "renameProfile"; id: string; name: string }
-  | { type: "deleteProfile"; id: string };
+  | { type: "deleteProfile"; id: string }
+  | { type: "restartAudio" };
 
 export interface CmdError {
   code: "notFound" | "unavailable" | "invalid" | "os";

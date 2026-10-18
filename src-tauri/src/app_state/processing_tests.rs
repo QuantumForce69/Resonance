@@ -4,24 +4,18 @@ use crate::{
     fake::{FakeBackend, FakeEngine},
 };
 
-fn named(id: &str, flow: Flow, name: &str) -> RawDevice {
-    let mut d = FakeBackend::device(id, flow);
-    d.name = name.into();
-    d
-}
-
 /// Speakers, a desk mic (default for both roles), a headset mic and, optionally, VB-Cable.
 fn backend(with_cable: bool) -> FakeBackend {
     let mut out1 = FakeBackend::device("out1", Flow::Render);
     out1.default_console = true;
     out1.default_comms = true;
-    let mut mic1 = named("mic1", Flow::Capture, "Desk Mic");
+    let mut mic1 = FakeBackend::named("mic1", Flow::Capture, "Desk Mic");
     mic1.default_console = true;
     mic1.default_comms = true;
-    let mut devices = vec![out1, mic1, named("mic2", Flow::Capture, "Headset Mic")];
+    let mut devices = vec![out1, mic1, FakeBackend::named("mic2", Flow::Capture, "Headset Mic")];
     if with_cable {
-        devices.push(named("cin", Flow::Render, "CABLE Input (VB-Audio Virtual Cable)"));
-        devices.push(named("cout", Flow::Capture, "CABLE Output (VB-Audio Virtual Cable)"));
+        devices.push(FakeBackend::named("cin", Flow::Render, "CABLE Input (VB-Audio Virtual Cable)"));
+        devices.push(FakeBackend::named("cout", Flow::Capture, "CABLE Output (VB-Audio Virtual Cable)"));
     }
     FakeBackend { devices, ..Default::default() }
 }
@@ -234,9 +228,9 @@ fn meters_include_processing_peaks() {
 #[test]
 fn recognises_newer_vb_cable_names() {
     let mut b = backend(false);
-    b.devices.push(named("c16", Flow::Render, "CABLE In 16 Ch (VB-Audio Virtual Cable)"));
-    b.devices.push(named("cspk", Flow::Render, "Speakers (VB-Audio Virtual Cable)"));
-    b.devices.push(named("cout", Flow::Capture, "CABLE Output (VB-Audio Virtual Cable)"));
+    b.devices.push(FakeBackend::named("c16", Flow::Render, "CABLE In 16 Ch (VB-Audio Virtual Cable)"));
+    b.devices.push(FakeBackend::named("cspk", Flow::Render, "Speakers (VB-Audio Virtual Cable)"));
+    b.devices.push(FakeBackend::named("cout", Flow::Capture, "CABLE Output (VB-Audio Virtual Cable)"));
     let (mut c, engine) = start(b, Settings::default());
     assert!(c.state().processing.cable_installed);
     enable(&mut c);

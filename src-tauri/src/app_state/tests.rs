@@ -209,7 +209,7 @@ fn config_commands_update_settings_and_state() {
     c.apply(Command::SetMicConfig { config: cfg.clone() }).unwrap();
     assert_eq!(c.state().mic, cfg);
     assert_eq!(c.settings().mic, cfg);
-    let ui = UiSettings { theme: Theme::Dark, start_minimized: true, onboarded: false, auto_restart_audio: false };
+    let ui = UiSettings { theme: Theme::Dark, start_minimized: true, ..Default::default() };
     c.apply(Command::SetUiSettings { ui: ui.clone() }).unwrap();
     assert_eq!(c.state().ui, ui);
     c.apply(Command::ResetAppMemory).unwrap();
@@ -240,4 +240,10 @@ fn snapshot_errors_propagate_and_keep_old_state() {
     c.backend_mut().fail_next_snapshot = true;
     assert!(c.refresh().is_err());
     assert_eq!(c.state(), &before);
+}
+
+#[test]
+fn restart_audio_is_not_an_app_core_command() {
+    let mut c = core_with(Settings::default());
+    assert_eq!(c.apply(Command::RestartAudio).unwrap_err().code(), "invalid");
 }

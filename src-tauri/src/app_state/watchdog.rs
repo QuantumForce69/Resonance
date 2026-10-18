@@ -35,11 +35,9 @@ impl Watchdog {
                 tick.disconnected.push(name.clone());
             }
         }
-        let returned: Vec<String> = self.missing.iter().filter(|id| present.contains(*id)).cloned().collect();
-        if !returned.is_empty() {
-            for id in &returned {
-                self.missing.remove(id);
-            }
+        let any_returned = self.missing.iter().any(|id| present.contains(id));
+        self.missing.retain(|id| !present.contains(id));
+        if any_returned {
             // A later return restarts the settling wait, so devices coming back together cause one restart.
             self.countdown = Some(SETTLE_TICKS);
         } else if let Some(n) = self.countdown {

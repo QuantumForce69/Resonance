@@ -37,6 +37,12 @@ impl FakeBackend {
         }
     }
 
+    pub fn named(id: &str, flow: Flow, name: &str) -> RawDevice {
+        let mut d = Self::device(id, flow);
+        d.name = name.into();
+        d
+    }
+
     pub fn session(id: &str, pid: u32, exe: Option<&str>) -> RawSession {
         RawSession {
             id: id.into(),
