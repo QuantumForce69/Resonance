@@ -109,6 +109,37 @@ fn switches_the_default_mics_to_the_cable_and_back() {
     assert_eq!(default(&core, Role::Communications), comms);
 }
 
+#[test]
+#[ignore]
+fn restart_audio_brings_the_processed_mic_back() {
+    let (mut core, _, _, cable_out) = setup();
+    core.set_engine(Box::new(WasapiEngine::new()));
+    let console_mic = |c: &AppCore<WasapiBackend>| {
+        c.state().devices.iter().find(|d| d.flow == Flow::Capture && d.default_console).map(|d| d.id.clone())
+    };
+    let before = console_mic(&core);
+    assert_ne!(before.as_deref(), Some(cable_out.as_str()), "quit Resonance (it's processing) before this test");
+
+    core.apply(Command::SetProcessing { processing: ProcessingSettings { enabled: true, ..Default::default() } }).unwrap();
+    assert_eq!(core.state().processing.status, EngineStatus::Running);
+    thread::sleep(Duration::from_secs(1));
+
+    core.rebuild(WasapiBackend::new().unwrap(), Box::new(WasapiEngine::new())).unwrap();
+    for _ in 0..20 {
+        if core.state().processing.status == EngineStatus::Running {
+            break;
+        }
+        thread::sleep(Duration::from_millis(250));
+        core.refresh().unwrap();
+    }
+    assert_eq!(core.state().processing.status, EngineStatus::Running, "processing came back after the restart");
+    assert_eq!(console_mic(&core).as_deref(), Some(cable_out.as_str()), "default mic stayed on CABLE Output");
+
+    // Turning processing off after a restart still gives the original mic back.
+    core.apply(Command::SetProcessing { processing: ProcessingSettings { enabled: false, ..Default::default() } }).unwrap();
+    assert_eq!(console_mic(&core), before, "turning processing off still gives the original mic back");
+}
+
 /// Plays a 440 Hz tone on `device_id` from this process until dropped.
 struct Tone {
     stop: Arc<AtomicBool>,
