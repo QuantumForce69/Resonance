@@ -4,6 +4,9 @@ mod tests;
 mod processing;
 #[cfg(test)]
 mod processing_tests;
+mod restart;
+#[cfg(test)]
+mod restart_tests;
 mod call;
 mod profiles;
 #[cfg(test)]
