@@ -5,7 +5,12 @@ headphones, for when a device, app session, the processed mic or the call mix ge
 
 **Decided with the user (2026-10-18):**
 - Scope is audio plus headphones.
-- It is triggered from the tray menu and a button on the Settings page. There is no hotkey and no Stream Deck action.
+- Triggers match Voicemeeter's Restart Audio Engine (researched 2026-10-18):
+  - the tray menu and a button on the Settings page (Voicemeeter: main menu);
+  - **Ctrl+R** in a Resonance window;
+  - **`resonance.exe -r`** on the command line or from a shortcut;
+  - a **`restartAudio`** command on the control pipe (Voicemeeter: `Command.Restart`);
+  - an optional **automatic restart** when a device Resonance is using drops out (Voicemeeter added this in January 2022).
 - It rebuilds in place inside the audio worker (approach A). It does not replace the worker thread or relaunch the app.
 
 ## What a restart does
@@ -32,6 +37,38 @@ The headphones get the existing `HeadsetCommand::Retry`, which drops the Space O
 
 **Unchanged:** settings, profiles, `pending_outputs`, hotkeys, the control pipe, and open windows.
 
+## Triggers
+
+Every trigger calls one routine, `app::restart::restart_audio(app)` (async). It restarts the worker, then sends
+`HeadsetCommand::Retry` and posts the result notice.
+
+- **Tray:** a "Restart audio" item, above Quit.
+- **Settings:** a "Restart audio" button. While a restart is running it reads "Restarting…" and is disabled.
+- **Ctrl+R:** a keydown listener in the main window and the flyout calls `api.restartAudio()`. It is ignored while a text
+  field has focus.
+- **`-r` / `--restart-audio`:** the single-instance callback (`app/mod.rs`) gets the second launch's arguments.
+  - With `-r`, it restarts audio and does not open the main window.
+  - If Resonance wasn't running, `-r` just starts it normally in the tray, since there is nothing to restart.
+- **Control pipe:** a new request, `{"command":"restartAudio"}`. `control::serve`'s handler takes a small `Control`
+  enum, either `Worker(Command)` or `RestartAudio`, instead of a bare `Command`, so the pipe can reach the restart
+  routine.
+- **Automatic restart** (Settings toggle "Restart audio when a device comes back", off by default, stored as
+  `ui.auto_restart_audio`):
+  - **Devices in use:**
+    - the default playback device;
+    - the processed mic's source mic;
+    - VB-Cable while processing is on;
+    - any device an app is routed to.
+  - **When one disappears,** a notice says "<device> disconnected. Resonance will restart audio when it's back."
+    This plays the role of Voicemeeter's "R" warning.
+  - **When it reappears,** Resonance waits 2 s for the driver to settle, then runs the restart.
+    - It restarts at most once per reappearance.
+    - Several devices returning within the 2 s window cause one restart.
+  - **Why on return:** restarting while the device is still missing can't help, and Resonance already follows other
+    device changes on its own.
+  - **Where the logic lives:** `AppCore` tracks the in-use set and reports "restart wanted" via a pure, unit-tested
+    function. The worker runs the restart.
+
 ## Components
 
 - **`worker.rs`**
@@ -48,9 +85,11 @@ The headphones get the existing `HeadsetCommand::Retry`, which drops the Space O
   - New Tauri command `restart_audio`. It is async and awaits `WorkerHandle::restart()`, then sends `HeadsetCommand::Retry`.
   - It is async because the restart can take up to about 3 s while the engine starts. The command must not block the
     main thread (see the `show_main` deadlock lesson).
-- **`app/tray.rs`**: a "Restart audio" menu item, placed above Quit. It spawns the same restart on the async runtime.
+- **`app/restart.rs`** (new): `restart_audio(app)`, the single routine behind every trigger.
+- **`app/tray.rs`**: the menu item. **`app/mod.rs`**: the `-r` handling. **`app/control.rs`**: the `restartAudio` request.
 - **Frontend**
   - `api.restartAudio()`.
+  - The Ctrl+R listener, and the auto-restart toggle on Settings.
   - A Settings row: "Restart audio", with the explanation "Reconnects every device, app and your headphones. Use it if
     sound stops or a device is missing."
   - While a restart is running the button reads "Restarting…" and is disabled. The result shows through the existing
@@ -79,6 +118,15 @@ The headphones get the existing `HeadsetCommand::Retry`, which drops the Space O
   - A saved app volume is re-applied to an existing session.
   - A failing backend factory leaves the old backend working and returns an error.
 - **Worker test:** `WorkerHandle::restart()` replies, and a state event follows.
+- **Auto-restart unit tests** (pure function):
+  - disappearance of an in-use device alone wants no restart, but adds a notice;
+  - reappearance wants a restart after 2 s;
+  - several reappearances in the window cause one restart;
+  - a device that isn't in use never triggers;
+  - the setting being off never triggers.
+- **Control pipe test:** `{"command":"restartAudio"}` reaches the handler as `Control::RestartAudio`.
+- **Argument test:** `-r` and `--restart-audio` are recognised; other arguments are not.
+- **Frontend test:** Ctrl+R calls `restartAudio`, except while typing in an input.
 - **Frontend test:** the Settings button calls `restartAudio`, shows "Restarting…", then re-enables.
 - **Hardware test** (`tests/engine_hw.rs`, ignored by default): restart while the processed mic is live. The mic is live
   again afterwards and the default capture device is CABLE Output.
