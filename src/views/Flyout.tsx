@@ -4,6 +4,7 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { showMain } from "../lib/api";
 import { formatDb } from "../lib/levels";
 import { isProcessed } from "../lib/processing";
+import { useRestartShortcut } from "../lib/useRestartShortcut";
 import { defaultMic, defaultOutput, run, toggleDeviceMute, useStore } from "../lib/store";
 import { AppRow } from "../components/AppRow";
 import { HeadsetStrip } from "../components/HeadsetStrip";
@@ -16,6 +17,7 @@ import { Slider } from "../components/Slider";
 import { Toasts } from "../components/Toasts";
 
 export function Flyout() {
+  useRestartShortcut();
   const state = useStore((s) => s.state);
 
   useEffect(() => {

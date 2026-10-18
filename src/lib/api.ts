@@ -26,3 +26,5 @@ export const sendHeadset = (cmd: HeadsetCommand) => invoke<void>("headset_comman
 export const getHeadset = () => invoke<HeadsetState>("get_headset");
 export const onHeadset = (cb: (h: HeadsetState) => void): Promise<UnlistenFn> =>
   listen<HeadsetState>("headset", (e) => cb(e.payload));
+
+export const restartAudio = () => invoke<void>("restart_audio");

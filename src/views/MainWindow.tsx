@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useStore } from "../lib/store";
+import { useRestartShortcut } from "../lib/useRestartShortcut";
 import { Toasts } from "../components/Toasts";
 import { DevicesView } from "./DevicesView";
 import { HeadphonesView } from "./HeadphonesView";
@@ -11,6 +12,7 @@ import { SettingsView } from "./SettingsView";
 import { Titlebar, type View } from "./Titlebar";
 
 export function MainWindow() {
+  useRestartShortcut();
   const [view, setView] = useState<View>("mixer");
   const state = useStore((s) => s.state);
 
